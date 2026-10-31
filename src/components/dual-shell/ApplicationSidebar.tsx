@@ -128,7 +128,7 @@ export const defaultSidebarData: SidebarData = {
   },
   user: {
     name: "Sam Doe",
-    email: "sam@example.com",
+    email: "saml@example.com",
     avatar: "",
   },
   workspaces: [
