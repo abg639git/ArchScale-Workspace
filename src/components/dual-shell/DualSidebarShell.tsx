@@ -85,6 +85,40 @@ const pagesByRail: Partial<
   },
 }
 
+const ACTIVE_PAGE_STORAGE_KEY = "archscale.activePage"
+type ActivePageSelection = { activeRailId: RailAppId; activeItem: string }
+
+function readActivePageSelection(): ActivePageSelection {
+  const defaultSelection: ActivePageSelection = {
+    activeRailId: "workspace",
+    activeItem: "Contacts",
+  }
+
+  try {
+    const stored = window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY)
+    if (!stored) return defaultSelection
+
+    const selection = JSON.parse(stored) as {
+      activeRailId?: unknown
+      activeItem?: unknown
+    }
+    if (
+      typeof selection.activeRailId === "string" &&
+      typeof selection.activeItem === "string" &&
+      pagesByRail[selection.activeRailId as RailAppId]?.[selection.activeItem]
+    ) {
+      return {
+        activeRailId: selection.activeRailId as RailAppId,
+        activeItem: selection.activeItem,
+      }
+    }
+  } catch {
+    return defaultSelection
+  }
+
+  return defaultSelection
+}
+
 function ShellContent({
   activeRailId,
   setActiveRailId,
@@ -273,8 +307,28 @@ function ShellContent({
 }
 
 export function DualSidebarShell() {
-  const [activeRailId, setActiveRailId] = React.useState<RailAppId>("workspace")
-  const [activeItem, setActiveItem] = React.useState<string>("Contacts")
+  const [selection, setSelection] = React.useState(readActivePageSelection)
+  const { activeRailId, activeItem } = selection
+
+  const setActiveRailId = React.useCallback((id: RailAppId) => {
+    setSelection((current) => ({ ...current, activeRailId: id }))
+  }, [])
+  const setActiveItem = React.useCallback((item: string) => {
+    setSelection((current) => ({ ...current, activeItem: item }))
+  }, [])
+
+  React.useEffect(() => {
+    if (!pagesByRail[activeRailId]?.[activeItem]) return
+
+    try {
+      window.localStorage.setItem(
+        ACTIVE_PAGE_STORAGE_KEY,
+        JSON.stringify({ activeRailId, activeItem })
+      )
+    } catch {
+      // Storage can be unavailable in private or restricted browser contexts.
+    }
+  }, [activeRailId, activeItem])
 
   return (
     <SidebarProvider defaultOpen={true}>

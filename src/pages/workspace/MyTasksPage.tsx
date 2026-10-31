@@ -153,20 +153,20 @@ export function MyTasksPage() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background">
-      <main className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 p-4 sm:p-6 xl:p-8">
+      <main className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-3 sm:p-4 xl:p-5">
         <header>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
             Workspace
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">My tasks</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">My tasks</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Keep track of the work assigned to you.
           </p>
         </header>
 
         <section
           aria-label="Task summary filters"
-          className="grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-card sm:grid-cols-4"
+          className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4"
         >
           {summaryTabs.map(({ label, filter, icon: Icon, tone }) => {
             const isSelected = activeFilter === filter
@@ -177,19 +177,19 @@ export function MyTasksPage() {
                 onClick={() => setActiveFilter(filter)}
                 aria-pressed={isSelected}
                 className={cn(
-                  "group relative flex min-w-0 items-center justify-center gap-2.5 px-3 py-3 text-left transition-colors hover:bg-muted/50 sm:px-4",
-                  "after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors sm:after:inset-x-4",
+                  "group relative flex min-w-0 items-center justify-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-muted/50 sm:px-3",
+                  "after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors sm:after:inset-x-3",
                   isSelected ? "bg-primary/[0.04] text-foreground after:bg-primary" : "text-muted-foreground after:bg-transparent"
                 )}
               >
-                <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", tone)}>
-                  <Icon className="size-4" />
+                <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md", tone)}>
+                  <Icon className="size-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium">{label}</span>
+                  <span className="block truncate text-[11px] font-medium">{label}</span>
                 </span>
                 <span className={cn(
-                  "min-w-7 rounded-md px-1.5 py-0.5 text-center text-sm font-semibold tabular-nums",
+                  "min-w-6 rounded px-1 py-0.5 text-center text-xs font-semibold tabular-nums",
                   isSelected ? "bg-primary/10 text-primary" : "bg-muted text-foreground"
                 )}>
                   {counts[filter]}
@@ -199,35 +199,35 @@ export function MyTasksPage() {
           })}
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_3px_rgb(0_0_0/0.04)]">
-          <div className="flex flex-col gap-4 border-b border-border p-4 sm:p-5">
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-[0_1px_3px_rgb(0_0_0/0.04)]">
+          <div className="flex flex-col gap-3 border-b border-border p-3 sm:p-4">
             <div>
-              <h2 className="text-base font-semibold">{activeFilter}</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <h2 className="text-sm font-semibold">{activeFilter}</h2>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Showing {filteredTasks.length} {filteredTasks.length === 1 ? "task" : "tasks"}
               </p>
             </div>
             <label className="relative block w-full sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search my tasks..."
                 aria-label="Search my tasks"
-                className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/30"
+                className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-2.5 text-xs outline-none transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/30"
               />
             </label>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] border-collapse text-sm">
+            <table className="w-full min-w-[640px] border-collapse text-xs">
               <thead>
-                <tr className="h-11 border-b border-border bg-[#1e293b] text-white">
-                  <th scope="col" className="px-5 text-left text-xs font-semibold uppercase tracking-wide text-white/80">Task name</th>
-                  <th scope="col" className="px-4 text-left text-xs font-semibold uppercase tracking-wide text-white/80">Priority</th>
-                  <th scope="col" className="px-4 text-left text-xs font-semibold uppercase tracking-wide text-white/80">Due date</th>
-                  <th scope="col" className="px-4 text-left text-xs font-semibold uppercase tracking-wide text-white/80">Status</th>
+                <tr className="h-9 border-b border-border bg-[#1e293b] text-white">
+                  <th scope="col" className="px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-white/80">Task name</th>
+                  <th scope="col" className="px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-white/80">Priority</th>
+                  <th scope="col" className="px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-white/80">Due date</th>
+                  <th scope="col" className="px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-white/80">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -235,36 +235,36 @@ export function MyTasksPage() {
                   const overdue = task.dueDate && task.dueDate < today && task.status !== "Completed"
                   return (
                     <tr key={task.id} className={cn(
-                      "group h-[68px] transition-colors hover:bg-muted/30",
+                      "group h-14 transition-colors hover:bg-muted/30",
                       overdue && "bg-rose-50/40"
                     )}>
-                      <td className="max-w-[420px] px-5">
-                        <div className="flex min-w-0 items-center gap-3">
+                      <td className="max-w-[420px] px-3">
+                        <div className="flex min-w-0 items-center gap-2.5">
                           <span className={cn(
-                            "flex size-8 shrink-0 items-center justify-center rounded-lg",
+                            "flex size-7 shrink-0 items-center justify-center rounded-md",
                             task.status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-primary/10 text-primary"
                           )}>
-                            {task.status === "Completed" ? <Check className="size-4" /> : <ListTodo className="size-4" />}
+                            {task.status === "Completed" ? <Check className="size-3.5" /> : <ListTodo className="size-3.5" />}
                           </span>
                           <span className="min-w-0">
-                            <span className="block truncate font-medium">{task.name}</span>
-                            <span className="mt-0.5 block text-[11px] text-muted-foreground">{task.id}</span>
+                            <span className="block truncate text-xs font-medium">{task.name}</span>
+                            <span className="mt-0.5 block text-[10px] text-muted-foreground">{task.id}</span>
                           </span>
                         </div>
                       </td>
-                      <td className="px-4">
-                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", priorityStyles[task.priority])}>
-                          <span className={cn("size-1.5 rounded-full", task.priority === "High" ? "bg-rose-500" : task.priority === "Medium" ? "bg-amber-500" : "bg-slate-400")} />
+                      <td className="px-3">
+                        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", priorityStyles[task.priority])}>
+                          <span className={cn("size-1 rounded-full", task.priority === "High" ? "bg-rose-500" : task.priority === "Medium" ? "bg-amber-500" : "bg-slate-400")} />
                           {task.priority}
                         </span>
                       </td>
-                      <td className="px-4">
-                        <span className={cn("inline-flex items-center gap-2 whitespace-nowrap text-sm", overdue && "font-medium text-rose-600", !task.dueDate && "text-muted-foreground")}>
-                          <CalendarDays className="size-3.5 text-muted-foreground" />
+                      <td className="px-3">
+                        <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-xs", overdue && "font-medium text-rose-600", !task.dueDate && "text-muted-foreground")}>
+                          <CalendarDays className="size-3 text-muted-foreground" />
                           {overdue ? "Overdue · " : ""}{formatDate(task.dueDate)}
                         </span>
                       </td>
-                      <td className="px-4">
+                      <td className="px-3">
                         <label className="sr-only" htmlFor={`my-task-status-${task.id}`}>Status for {task.name}</label>
                         <select
                           id={`my-task-status-${task.id}`}
@@ -273,7 +273,7 @@ export function MyTasksPage() {
                             const status = event.target.value as TaskStatus
                             setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status } : item))
                           }}
-                          className={cn("h-8 rounded-full border-0 px-2.5 text-xs font-medium outline-none ring-1 ring-inset ring-transparent focus:ring-2 focus:ring-primary", statusStyles[task.status])}
+                          className={cn("h-7 rounded-full border-0 px-2 text-[11px] font-medium outline-none ring-1 ring-inset ring-transparent focus:ring-2 focus:ring-primary", statusStyles[task.status])}
                         >
                           {statuses.map((status) => <option key={status}>{status}</option>)}
                         </select>
@@ -283,9 +283,9 @@ export function MyTasksPage() {
                 })}
                 {filteredTasks.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-6 py-16 text-center">
-                      <span className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                        <Search className="size-4" />
+                    <td colSpan={4} className="px-4 py-10 text-center">
+                      <span className="mx-auto mb-2 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                        <Search className="size-3.5" />
                       </span>
                       <p className="text-sm font-medium">No tasks found</p>
                       <p className="mt-1 text-xs text-muted-foreground">Try another search or status filter.</p>
