@@ -114,6 +114,11 @@ interface AppRailProps {
   onSelectPreviewItem: (id: RailAppId, item: string) => void
   isSidebarOpen: boolean
   onToggleSidebar: () => void
+  onOpenMore: () => void
+  onOpenInvite: () => void
+  onProfileAction: (action: "account" | "preferences" | "logout") => void
+  profileName: string
+  profileEmail: string
 }
 
 type RailPreviewItem = {
@@ -210,6 +215,11 @@ const AppRailBase: React.FC<AppRailProps> = ({
   onSelectPreviewItem,
   isSidebarOpen,
   onToggleSidebar,
+  onOpenMore,
+  onOpenInvite,
+  onProfileAction,
+  profileName,
+  profileEmail,
 }) => {
   const [preview, setPreview] = React.useState<{ id: RailAppId; top: number } | null>(null)
   const previewCloseTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -235,6 +245,8 @@ const AppRailBase: React.FC<AppRailProps> = ({
     },
     [cancelPreviewClose]
   )
+
+  const profileInitials = profileName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()
 
   const showPreview = (id: RailAppId, target: HTMLButtonElement) => {
     cancelPreviewClose()
@@ -325,9 +337,7 @@ const AppRailBase: React.FC<AppRailProps> = ({
                 onClick={() => {
                   cancelPreviewClose()
                   setPreview(null)
-                  onSelect("settings")
-                  onSelectPreviewItem("settings", "More")
-                  if (!isSidebarOpen) onToggleSidebar()
+                  onOpenMore()
                 }}
                 className="shell-interaction flex h-12 w-full flex-col items-center justify-center gap-1 rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
               >
@@ -343,8 +353,7 @@ const AppRailBase: React.FC<AppRailProps> = ({
                 type="button"
                 onClick={() => {
                   onSelect("workspace")
-                  onSelectPreviewItem("workspace", "Invite")
-                  if (!isSidebarOpen) onToggleSidebar()
+                  onOpenInvite()
                 }}
                 className="shell-interaction flex h-12 w-full flex-col items-center justify-center gap-1 rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
               >
@@ -358,12 +367,12 @@ const AppRailBase: React.FC<AppRailProps> = ({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                title="Signed in as Sam Doe"
+                title={`Profile: ${profileName}`}
                 className="shell-interaction relative my-1 flex size-10 items-center justify-center rounded-full border border-sidebar-border bg-amber-300 text-sm font-medium text-foreground"
               >
                 <Avatar className="size-9">
                   <AvatarFallback className="bg-amber-300 text-foreground">
-                    SD
+                    {profileInitials}
                   </AvatarFallback>
                 </Avatar>
                 <span className="absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-sidebar-background bg-emerald-500" />
@@ -371,16 +380,16 @@ const AppRailBase: React.FC<AppRailProps> = ({
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" className="w-56">
               <DropdownMenuLabel>
-                <span className="block">Sam Doe</span>
+                <span className="block">{profileName}</span>
                 <span className="text-xs font-normal text-muted-foreground">
-                  sam@example.com
+                  {profileEmail}
                 </span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Account</DropdownMenuItem>
-              <DropdownMenuItem>Preferences</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onProfileAction("account")}>Account</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onProfileAction("preferences")}>Preferences</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Log out</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onProfileAction("logout")}>Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

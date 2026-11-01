@@ -11,6 +11,12 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { getInitials, statusLabel, type DirectoryEntry } from "./data"
 
 type ContactTab = "Details" | "Organisation" | "Projects" | "Relationships" | "Activity"
@@ -21,6 +27,8 @@ interface ContactDetailsPanelProps {
   onToggleStar: (id: string) => void
   onClose: () => void
   onBack: () => void
+  onEdit: () => void
+  onDelete: () => void
 }
 
 export function ContactDetailsPanel({
@@ -29,8 +37,11 @@ export function ContactDetailsPanel({
   onToggleStar,
   onClose,
   onBack,
+  onEdit,
+  onDelete,
 }: ContactDetailsPanelProps) {
   const [activeTab, setActiveTab] = React.useState<ContactTab>("Details")
+  const [copyFeedback, setCopyFeedback] = React.useState("")
   const roleParts = entry.role.split(" · ")
   const organisation =
     entry.related.find((item) => item.label.toLowerCase() === "organisation")?.value ??
@@ -50,11 +61,12 @@ export function ContactDetailsPanel({
     { label: "Location", value: entry.city },
   ]
 
-  const copyValue = async (value: string) => {
+  const copyValue = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value)
+      setCopyFeedback(`${label} copied`)
     } catch (error) {
-      console.error("Could not copy contact detail.", error)
+      setCopyFeedback("Clipboard access is unavailable in this browser context.")
     }
   }
 
@@ -71,7 +83,7 @@ export function ContactDetailsPanel({
           >
             <Star className={cn("size-4", isStarred && "fill-current")} />
           </button>
-          <button type="button" aria-label="Edit contact" className="shell-interaction hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent sm:flex">
+          <button type="button" onClick={onEdit} aria-label="Edit contact" className="shell-interaction hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent sm:flex">
             <Pencil className="size-4" />
           </button>
           <a href={`mailto:${entry.email}`} aria-label="Email contact" className="shell-interaction flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent">
@@ -80,12 +92,21 @@ export function ContactDetailsPanel({
           <a href={`tel:${entry.phone.replace(/\s+/g, "")}`} aria-label="Call contact" className="shell-interaction hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent sm:flex">
             <MessageCircle className="size-4" />
           </a>
-          <button type="button" aria-label="Delete contact" className="shell-interaction hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent md:flex">
+          <button type="button" onClick={onDelete} aria-label="Delete contact" className="shell-interaction hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent md:flex">
             <Trash2 className="size-4" />
           </button>
-          <button type="button" aria-label="More contact actions" className="shell-interaction hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent sm:flex">
-            <MoreHorizontal className="size-4" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label="More contact actions" className="shell-interaction flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent">
+                <MoreHorizontal className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onEdit}><Pencil className="size-3.5" />Edit contact</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void copyValue(entry.email, "Email")} disabled={!entry.email}><Copy className="size-3.5" />Copy email</DropdownMenuItem>
+              <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive"><Trash2 className="size-3.5" />Delete contact</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             onClick={onClose}
@@ -168,7 +189,7 @@ export function ContactDetailsPanel({
                 {canCopy && value && value !== "—" ? (
                   <button
                     type="button"
-                    onClick={() => void copyValue(value)}
+                    onClick={() => void copyValue(value, label)}
                     aria-label={`Copy ${label.toLowerCase()}`}
                     className="shell-interaction flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent sm:size-9"
                   >
@@ -210,6 +231,7 @@ export function ContactDetailsPanel({
         {activeTab === "Activity" && (
           <p className="py-8 text-center text-sm text-muted-foreground">No recent activity.</p>
         )}
+        {copyFeedback && <p role="status" className="mt-3 text-xs text-muted-foreground">{copyFeedback}</p>}
       </div>
     </section>
   )

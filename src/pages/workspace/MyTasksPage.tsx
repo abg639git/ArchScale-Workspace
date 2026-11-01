@@ -1,4 +1,5 @@
 import * as React from "react"
+import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
   CalendarDays,
   Check,
@@ -128,7 +129,7 @@ const summaryTabs = [
 ] as const
 
 export function MyTasksPage() {
-  const [tasks, setTasks] = React.useState(initialTasks)
+  const [tasks, setTasks] = usePersistentState("archscale.tasks.mine", initialTasks)
   const [activeFilter, setActiveFilter] = React.useState<string>("All tasks")
   const [search, setSearch] = React.useState("")
 

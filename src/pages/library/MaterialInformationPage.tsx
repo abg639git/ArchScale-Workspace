@@ -1,5 +1,8 @@
 import * as React from "react"
-import { Plus, RefreshCw, X } from "lucide-react"
+import { usePersistentState } from "@/hooks/use-persistent-state"
+import { MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
 
 type Material = {
   id: string
@@ -31,12 +34,44 @@ const initialMaterials: Material[] = [
 const categories = ["Fabric", "Glass", "Hardware", "Laminate", "Paint", "Stone", "Surface", "Tile", "Veneer", "Wood"]
 
 export function MaterialInformationPage() {
-  const [materials, setMaterials] = React.useState(initialMaterials)
+  const [materials, setMaterials] = usePersistentState("archscale.materials", initialMaterials)
   const [isAddingMaterial, setIsAddingMaterial] = React.useState(false)
+  const [editingMaterial, setEditingMaterial] = React.useState<Material | null>(null)
+  const [deletingMaterial, setDeletingMaterial] = React.useState<Material | null>(null)
+  const [formError, setFormError] = React.useState("")
+  const [feedback, setFeedback] = React.useState("")
 
-  const addMaterial = (material: Omit<Material, "id">) => {
-    setMaterials((current) => [{ ...material, id: `MAT-${Date.now()}` }, ...current])
+  const saveMaterial = (material: Omit<Material, "id">) => {
+    const code = material.code.trim().toUpperCase()
+    if (materials.some((entry) => entry.id !== editingMaterial?.id && entry.code.toUpperCase() === code)) {
+      setFormError(`Item code ${code} already exists.`)
+      return
+    }
+    const saved = { ...material, code, id: editingMaterial?.id ?? `MAT-${Date.now()}` }
+    setMaterials((current) => editingMaterial
+      ? current.map((entry) => entry.id === editingMaterial.id ? saved : entry)
+      : [saved, ...current])
     setIsAddingMaterial(false)
+    setEditingMaterial(null)
+    setFormError("")
+    setFeedback(`${saved.name} saved in this browser.`)
+  }
+
+  const confirmDeleteMaterial = () => {
+    if (!deletingMaterial) return
+    setMaterials((current) => current.filter((entry) => entry.id !== deletingMaterial.id))
+    setFeedback(`${deletingMaterial.name} removed from this browser.`)
+    setDeletingMaterial(null)
+  }
+
+  const refreshMaterials = () => {
+    try {
+      const saved = window.localStorage.getItem("archscale.materials")
+      if (saved !== null) setMaterials(JSON.parse(saved) as Material[])
+      setFeedback("Materials reloaded from this browser.")
+    } catch {
+      setFeedback("Saved materials could not be read; current session data remains available.")
+    }
   }
 
   return (
@@ -47,16 +82,16 @@ export function MaterialInformationPage() {
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={() => setMaterials(initialMaterials)}
-              aria-label="Refresh sample materials"
-              title="Refresh sample materials"
+              onClick={refreshMaterials}
+              aria-label="Refresh saved materials"
+              title="Refresh saved materials"
               className="inline-flex size-9 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-accent"
             >
               <RefreshCw className="size-4" />
             </button>
             <button
               type="button"
-              onClick={() => setIsAddingMaterial(true)}
+              onClick={() => { setEditingMaterial(null); setFormError(""); setIsAddingMaterial(true) }}
               className="inline-flex h-9 items-center gap-2 rounded-md bg-[#f45a1e] px-3 text-sm font-medium text-white transition-colors hover:bg-[#df4c13]"
             >
               <Plus className="size-4" />
@@ -73,6 +108,17 @@ export function MaterialInformationPage() {
               aria-label={`${material.name} material details`}
               className="group relative rounded-md border border-border bg-card transition-shadow duration-300 ease-in-out hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
             >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={`Actions for ${material.name}`} className="absolute right-2 top-2 z-20 flex size-7 items-center justify-center rounded bg-background/90 text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100">
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => { setEditingMaterial(material); setFormError("") }}><Pencil className="size-3.5" />Edit material</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setDeletingMaterial(material)} className="text-destructive focus:text-destructive"><Trash2 className="size-3.5" />Delete material</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <div className="relative z-10 h-24 w-full">
                 <div
                   className="h-full w-full rounded-t-[5px] border-b border-black/5 transition-[transform,box-shadow] duration-300 ease-in-out group-hover:-translate-y-1 group-hover:shadow-md group-focus-visible:-translate-y-1 group-focus-visible:shadow-md motion-reduce:transition-none"
@@ -96,27 +142,34 @@ export function MaterialInformationPage() {
             </article>
           ))}
         </section>
+        {feedback && <p role="status" className="text-[10px] text-muted-foreground">{feedback}</p>}
       </main>
 
       {isAddingMaterial && (
-        <MaterialForm onClose={() => setIsAddingMaterial(false)} onSave={addMaterial} />
+        <MaterialForm onClose={() => setIsAddingMaterial(false)} onSave={saveMaterial} error={formError} />
       )}
+      {editingMaterial && <MaterialForm key={editingMaterial.id} material={editingMaterial} onClose={() => { setEditingMaterial(null); setFormError("") }} onSave={saveMaterial} error={formError} />}
+      {deletingMaterial && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeletingMaterial(null) }}><section role="alertdialog" aria-modal="true" aria-labelledby="delete-material-title" className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-2xl"><h2 id="delete-material-title" className="text-sm font-semibold">Delete material?</h2><p className="mt-1 text-xs text-muted-foreground">{deletingMaterial.name} will be removed from this browser’s material catalog.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setDeletingMaterial(null)} className="h-8 rounded border border-input px-3 text-xs hover:bg-accent">Cancel</button><button type="button" onClick={confirmDeleteMaterial} className="h-8 rounded bg-destructive px-3 text-xs font-medium text-destructive-foreground hover:bg-destructive/90">Delete material</button></div></section></div>}
     </div>
   )
 }
 
 function MaterialForm({
+  material,
   onClose,
   onSave,
+  error,
 }: {
+  material?: Material | null
   onClose: () => void
   onSave: (material: Omit<Material, "id">) => void
+  error: string
 }) {
-  const [name, setName] = React.useState("")
-  const [code, setCode] = React.useState("")
-  const [category, setCategory] = React.useState(categories[0])
-  const [quantity, setQuantity] = React.useState("0")
-  const [color, setColor] = React.useState("#cdb993")
+  const [name, setName] = React.useState(material?.name ?? "")
+  const [code, setCode] = React.useState(material?.code ?? "")
+  const [category, setCategory] = React.useState(material?.category ?? categories[0])
+  const [quantity, setQuantity] = React.useState(String(material?.quantity ?? 0))
+  const [color, setColor] = React.useState(material?.color ?? "#cdb993")
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -136,8 +189,8 @@ function MaterialForm({
       <section role="dialog" aria-modal="true" aria-labelledby="material-form-title" className="w-full max-w-md overflow-hidden rounded-lg border border-border bg-background shadow-2xl">
         <header className="flex items-start justify-between border-b border-border p-4">
           <div>
-            <h2 id="material-form-title" className="text-base font-semibold">New material</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Add a material sample to the catalog.</p>
+            <h2 id="material-form-title" className="text-base font-semibold">{material ? "Edit material" : "New material"}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Changes are saved in this browser.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close dialog" className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
             <X className="size-4" />
@@ -172,9 +225,10 @@ function MaterialForm({
             <span>Swatch color</span>
             <input type="color" value={color} onChange={(event) => setColor(event.target.value)} aria-label="Swatch color" className="size-9 cursor-pointer rounded border border-input bg-background p-1" />
           </label>
+          {error && <p role="alert" className="text-xs text-destructive sm:col-span-2">{error}</p>}
           <footer className="flex justify-end gap-2 border-t border-border pt-3 sm:col-span-2">
             <button type="button" onClick={onClose} className="h-9 rounded-md border border-input px-3 text-sm font-medium transition-colors hover:bg-accent">Cancel</button>
-            <button type="submit" disabled={!name.trim() || !code.trim()} className="h-9 rounded-md bg-[#f45a1e] px-3 text-sm font-medium text-white transition-colors hover:bg-[#df4c13] disabled:pointer-events-none disabled:opacity-50">Add material</button>
+            <button type="submit" disabled={!name.trim() || !code.trim()} className={cn("h-9 rounded-md bg-[#f45a1e] px-3 text-sm font-medium text-white transition-colors hover:bg-[#df4c13] disabled:pointer-events-none disabled:opacity-50")}>{material ? "Save changes" : "Add material"}</button>
           </footer>
         </form>
       </section>

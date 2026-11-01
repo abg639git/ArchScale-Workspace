@@ -1,4 +1,5 @@
 import * as React from "react"
+import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
   ArrowDown,
   ArrowDownUp,
@@ -203,7 +204,7 @@ const initials = (name: string) =>
 const makeTaskId = () => `TSK-${Date.now()}`
 
 export function TasksListPage() {
-  const [tasks, setTasks] = React.useState(initialTasks)
+  const [tasks, setTasks] = usePersistentState("archscale.tasks.list", initialTasks)
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("All statuses")
   const [priorityFilter, setPriorityFilter] = React.useState("All priorities")

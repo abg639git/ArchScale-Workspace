@@ -221,12 +221,14 @@ interface ApplicationSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeRailId: RailAppId
   activeItem: string
   onSelectItem: (item: string) => void
+  onOpenMore: () => void
 }
 
 const ApplicationSidebarBase: React.FC<ApplicationSidebarProps> = ({
   activeRailId,
   activeItem,
   onSelectItem,
+  onOpenMore,
   ...props
 }) => {
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -501,7 +503,7 @@ const ApplicationSidebarBase: React.FC<ApplicationSidebarProps> = ({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              onClick={() => onSelectItem("More")}
+              onClick={onOpenMore}
               className="shell-interaction cursor-pointer"
             >
               <MoreHorizontal className="size-4" />
