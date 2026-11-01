@@ -6,6 +6,9 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Image,
+  LayoutGrid,
+  List,
   MoreHorizontal,
   Package,
   Plus,
@@ -245,10 +248,46 @@ export function SwatchSamplePage() {
   const visibleRequests = requests.filter((request) => {
     const matchesStage = activeStage === "all" || request.stage === activeStage
     const matchesSearch = !query ||
-      `${request.id} ${request.organization} ${request.project} ${request.requester} ${request.sampleDetails}`.toLowerCase().includes(query)
+      `${request.id} ${request.organization} ${request.project} ${request.requester} ${request.sampleDetails} ${request.samples.map((sample) => `${sample.name} ${sample.code}`).join(" ")} ${request.stage} ${request.status} ${request.assignedTo} ${request.courier} ${request.trackingNumber} ${request.reviewer} ${request.decision} ${request.returnStatus} ${request.finalDisposition}`.toLowerCase().includes(query)
     return matchesStage && matchesSearch
   })
   const activeRequest = requests.find((request) => request.id === activeRequestId) ?? null
+
+  const stageColumns: { label: string; render: (request: WorkflowRequest) => React.ReactNode }[] = activeStage === "all"
+    ? [
+        { label: "Stage", render: (request) => stages[stagePosition[request.stage]].label },
+        { label: "Sample details", render: (request) => request.sampleDetails || "No samples selected" },
+        { label: "Required", render: (request) => formatDate(request.requiredDate) },
+      ]
+    : activeStage === "request"
+      ? [
+          { label: "Requester", render: (request) => request.requester || "Not set" },
+          { label: "Requested samples", render: (request) => `${request.sampleDetails || "No samples selected"} · ${request.quantity} requested` },
+          { label: "Required", render: (request) => formatDate(request.requiredDate) },
+        ]
+      : activeStage === "issue"
+        ? [
+            { label: "Sample bag", render: (request) => request.samples.length ? request.samples.map((sample) => `${sample.name} (${sample.code})`).join(", ") : "No samples selected" },
+            { label: "Availability", render: (request) => `${request.availability} · ${request.stockLocation}` },
+            { label: "Quantity", render: (request) => `${request.issuedQuantity} of ${request.quantity} issued` },
+          ]
+        : activeStage === "delivery"
+          ? [
+              { label: "Dispatch", render: (request) => `${request.courier || "No courier"}${request.trackingNumber ? ` · ${request.trackingNumber}` : ""}` },
+              { label: "Receipt", render: (request) => `${request.receiptStatus} · ${request.receivedQuantity} of ${request.issuedQuantity} received` },
+              { label: "Expected", render: (request) => formatDate(request.expectedDate) },
+            ]
+          : activeStage === "review"
+            ? [
+                { label: "Reviewer", render: (request) => request.reviewer || "Not assigned" },
+                { label: "Decision", render: (request) => `${request.decision}${request.finalApproval ? " · Final approval" : ""}` },
+                { label: "Follow-up", render: (request) => request.followUp || "None" },
+              ]
+            : [
+                { label: "Return due", render: (request) => formatDate(request.returnBy) },
+                { label: "Return status", render: (request) => `${request.returnStatus} · ${request.returnedQuantity} of ${request.issuedQuantity} returned` },
+                { label: "Condition / disposition", render: (request) => `${request.returnCondition} · ${request.finalDisposition}` },
+              ]
 
   const updateRequest = (updated: WorkflowRequest, nextStage?: WorkflowStage) => {
     const saved = nextStage ? { ...updated, stage: nextStage } : updated
@@ -409,19 +448,46 @@ export function SwatchSamplePage() {
           </div>
         </header>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border">
-          <nav aria-label="Sample workflow navigation" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-            <button type="button" onClick={() => setView("board")} aria-pressed={view === "board"} className={navClass(view === "board")}>
-              Board
-            </button>
-            <button type="button" onClick={() => setView("all")} aria-pressed={view === "all"} className={navClass(view === "all")}>
-              All
+        <div className="flex shrink-0 flex-col gap-1 border-b border-border pb-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div role="group" aria-label="Request view" className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
+              <button type="button" onClick={() => setView("board")} aria-pressed={view === "board"} className={viewClass(view === "board")}>
+                <LayoutGrid aria-hidden="true" className="size-3.5" />
+                Board
+              </button>
+              <button type="button" onClick={() => setView("all")} aria-pressed={view === "all"} className={viewClass(view === "all")}>
+                <List aria-hidden="true" className="size-3.5" />
+                List
+              </button>
+            </div>
+            <label className="relative w-full sm:max-w-52">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                aria-label="Search sample requests"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search requests..."
+                className="h-7 w-full rounded-md border border-input bg-background pl-8 pr-2 text-[11px] outline-none focus:ring-2 focus:ring-ring/30"
+              />
+            </label>
+          </div>
+          <nav aria-label="Filter by workflow stage" className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setActiveStage("all")}
+              aria-pressed={activeStage === "all"}
+              className={navClass(activeStage === "all")}
+            >
+              All requests
+              <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] tabular-nums text-muted-foreground">
+                {requests.length}
+              </span>
             </button>
             {stages.map((stage) => (
               <button
                 type="button"
                 key={stage.id}
-                onClick={() => setActiveStage((current) => current === stage.id ? "all" : stage.id)}
+                onClick={() => setActiveStage(stage.id)}
                 aria-pressed={activeStage === stage.id}
                 className={navClass(activeStage === stage.id)}
               >
@@ -432,16 +498,6 @@ export function SwatchSamplePage() {
               </button>
             ))}
           </nav>
-          <label className="relative mb-1 w-full sm:w-52">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              aria-label="Search sample requests"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search requests..."
-              className="h-7 w-full rounded-md border border-input bg-background pl-8 pr-2 text-[11px] outline-none focus:ring-2 focus:ring-ring/30"
-            />
-          </label>
         </div>
 
         {view === "board" ? (
@@ -477,22 +533,36 @@ export function SwatchSamplePage() {
             <table className="w-full min-w-[860px] border-collapse text-xs">
               <thead className="sticky top-0 bg-slate-800 text-white">
                 <tr className="h-8 text-left text-[10px] uppercase tracking-wide text-white/80">
-                  <th className="px-3">Request</th><th className="px-3">Organization / Project</th><th className="px-3">Stage</th><th className="px-3">Required</th><th className="px-3">Priority</th><th className="px-3">Assigned to</th><th className="px-3">Action</th>
+                  <th className="px-3">Request</th>
+                  <th className="px-3">Organization / Project</th>
+                  {stageColumns.map((column) => <th key={column.label} className="px-3">{column.label}</th>)}
+                  <th className="px-3">Priority</th>
+                  <th className="px-3">Assigned to</th>
+                  <th className="px-3">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleRequests.map((request) => (
                   <tr key={request.id} className="h-12 hover:bg-muted/30">
-                    <td className="px-3"><span className="font-medium">{request.id}</span></td>
+                    <td className="whitespace-nowrap px-3"><span className="font-medium">{request.id}</span></td>
                     <td className="px-3"><span className="block font-medium">{request.organization || "New organization"}</span><span className="text-[10px] text-muted-foreground">{request.project || "Project not set"}</span></td>
-                    <td className="px-3">{stages[stagePosition[request.stage]].label}</td>
-                    <td className="px-3">{formatDate(request.requiredDate)}</td>
+                    {stageColumns.map((column) => <td key={column.label} className="max-w-56 px-3">{column.render(request)}</td>)}
                     <td className="px-3"><PriorityBadge priority={request.priority} /></td>
-                    <td className="px-3">{request.assignedTo}</td>
-                    <td className="px-3"><button type="button" onClick={() => setActiveRequestId(request.id)} className="rounded bg-slate-900 px-2.5 py-1.5 text-[10px] font-medium text-white hover:bg-slate-700">{request.closed ? "View closure" : stages[stagePosition[request.stage]].action}</button></td>
+                    <td className="whitespace-nowrap px-3">{request.assignedTo || "Not assigned"}</td>
+                    <td className="px-3"><button type="button" onClick={() => setActiveRequestId(request.id)} className="whitespace-nowrap rounded bg-slate-900 px-2.5 py-1.5 text-[10px] font-medium text-white hover:bg-slate-700">{request.closed ? "View closure" : stages[stagePosition[request.stage]].action}</button></td>
                   </tr>
                 ))}
-                {visibleRequests.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-xs text-muted-foreground">No sample requests found.</td></tr>}
+                {visibleRequests.length === 0 && (
+                  <tr>
+                    <td colSpan={stageColumns.length + 5} className="p-8 text-center text-xs text-muted-foreground">
+                      {query
+                        ? "No requests match your search in this view."
+                        : activeStage === "all"
+                          ? "No sample requests yet. Create a request to get started."
+                          : `No requests are in ${stages[stagePosition[activeStage]].label}.`}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -522,6 +592,13 @@ function navClass(active: boolean) {
   return cn(
     "flex h-8 shrink-0 items-center whitespace-nowrap border-b-2 px-2 text-[10px] transition-colors",
     active ? "border-primary font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+  )
+}
+
+function viewClass(active: boolean) {
+  return cn(
+    "flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-[10px] transition-colors",
+    active ? "bg-background font-semibold text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
   )
 }
 
@@ -593,14 +670,30 @@ function RequestCard({
         <PriorityBadge priority={request.priority} />
       </div>
 
-      <div className="mt-2 flex min-w-0 items-center gap-1.5">
-        <div className="flex shrink-0 -space-x-1">
-          {request.samples.slice(0, 3).map((sample) => (
-            <span key={sample.code} title={sample.name} className="size-5 rounded border border-background ring-1 ring-border" style={{ backgroundColor: sample.color }} />
-          ))}
-          {request.samples.length === 0 && <span className="size-5 rounded border border-border bg-muted" />}
+      <div className="mt-2 flex min-w-0 items-center gap-2">
+        {request.samples[0] ? (
+          <div
+            role="img"
+            aria-label={`Material preview: ${request.samples[0].name}`}
+            className="relative size-10 shrink-0 overflow-hidden rounded border border-border"
+            style={{
+              backgroundColor: request.samples[0].color,
+              backgroundImage: "linear-gradient(135deg, rgb(255 255 255 / 0.55), transparent 42%, rgb(0 0 0 / 0.12)), repeating-linear-gradient(45deg, transparent 0 5px, rgb(255 255 255 / 0.16) 5px 6px)",
+            }}
+          >
+            <span className="absolute inset-x-0 bottom-0 truncate bg-black/35 px-1 text-[7px] text-white">
+              {request.samples[0].category}
+            </span>
+          </div>
+        ) : (
+          <div className="flex size-10 shrink-0 items-center justify-center rounded border border-dashed border-border bg-muted text-muted-foreground">
+            <Image aria-hidden="true" className="size-4" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[10px]">{request.sampleDetails || request.samples.map((sample) => sample.name).join(", ") || "Samples not selected"}</p>
+          {request.samples[0] && <p className="truncate text-[9px] text-muted-foreground">{request.samples[0].code}</p>}
         </div>
-        <span className="min-w-0 flex-1 truncate text-[10px]">{request.sampleDetails || request.samples.map((sample) => sample.name).join(", ") || "Samples not selected"}</span>
         <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
       </div>
 
@@ -759,6 +852,18 @@ function WorkflowDialog({
     setValidationMessage("")
   }
 
+  const removeSample = (code: string) => {
+    setDraft((current) => {
+      const samples = current.samples.filter((sample) => sample.code !== code)
+      return {
+        ...current,
+        samples,
+        sampleDetails: samples.map((sample) => sample.name).join(", "),
+      }
+    })
+    setValidationMessage("")
+  }
+
   const advance = (nextStage: WorkflowStage, updateValues: Partial<WorkflowRequest> = {}) => {
     onSave({ ...draft, ...updateValues }, nextStage)
   }
@@ -857,7 +962,30 @@ function WorkflowDialog({
               <SelectControl label="Organization type" value={draft.organizationType} options={["Client", "Studio"]} onChange={(value) => update("organizationType", value as OrganizationType)} />
               <TextControl label="Project" value={draft.project} onChange={(value) => update("project", value)} required />
               <TextControl label="Requester" value={draft.requester} onChange={(value) => update("requester", value)} required />
-              <TextControl label="Sample details" value={draft.sampleDetails} onChange={(value) => update("sampleDetails", value)} required />
+              <section className="space-y-2 rounded-md border border-border p-3 sm:col-span-2">
+                <div>
+                  <h3 className="text-xs font-semibold">Requested samples</h3>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Choose catalogue samples to add them to this request.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_88px_auto]">
+                  <select aria-label="Catalogue sample" value={selectedCode} onChange={(event) => setSelectedCode(event.target.value)} className={controlClass}>
+                    {sampleCatalogue.map((sample) => <option key={sample.code} value={sample.code}>{sample.name} · {sample.code} · {stockLevels[sample.code] ?? 0} available</option>)}
+                  </select>
+                  <input aria-label="Sample quantity" type="number" min="1" value={bagQuantity} onChange={(event) => setBagQuantity(event.target.value)} className={controlClass} />
+                  <button type="button" onClick={addSample} className="inline-flex h-8 items-center justify-center gap-1 rounded border border-input px-2 text-[10px] font-medium hover:bg-accent"><Plus className="size-3" />Add sample</button>
+                </div>
+                <div className="divide-y divide-border">
+                  {draft.samples.map((sample) => (
+                    <div key={sample.code} className="flex items-center gap-2 py-2 text-[10px]">
+                      <span className="size-7 shrink-0 rounded border border-border" style={{ backgroundColor: sample.color }} />
+                      <span className="min-w-0 flex-1 truncate">{sample.name} <span className="text-muted-foreground">{sample.code}</span></span>
+                      <span className="text-muted-foreground">Qty {sample.requestedQuantity}</span>
+                      <button type="button" aria-label={`Remove ${sample.name}`} onClick={() => removeSample(sample.code)} className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"><X className="size-3" /></button>
+                    </div>
+                  ))}
+                  {draft.samples.length === 0 && <p className="py-2 text-[10px] text-muted-foreground">No samples selected. Choose a catalogue sample above.</p>}
+                </div>
+              </section>
               <TextControl label="Quantity" type="number" min={1} value={draft.quantity} onChange={(value) => update("quantity", Math.max(1, Number(value) || 1))} required />
               <SelectControl label="Request Type" value={draft.requestType} options={["Project sample", "Client presentation", "Mock-up", "Replacement"]} onChange={(value) => update("requestType", value)} />
               <SelectControl label="Priority" value={draft.priority} options={["Urgent", "High", "Normal", "Low"]} onChange={(value) => update("priority", value as Priority)} />
@@ -889,7 +1017,7 @@ function WorkflowDialog({
                       <span className="size-5 shrink-0 rounded border border-border" style={{ backgroundColor: sample.color }} />
                       <span className="min-w-0 flex-1 truncate">{sample.name} <span className="text-muted-foreground">{sample.code}</span></span>
                       <label className="flex items-center gap-1 text-muted-foreground">Qty <input type="number" min="1" value={sample.requestedQuantity} onChange={(event) => update("samples", draft.samples.map((item) => item.code === sample.code ? { ...item, requestedQuantity: Math.max(1, Number(event.target.value) || 1) } : item))} className="h-7 w-14 rounded border border-input bg-background px-1 text-foreground" /></label>
-                      <button type="button" aria-label={`Remove ${sample.name}`} onClick={() => update("samples", draft.samples.filter((item) => item.code !== sample.code))} className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"><X className="size-3" /></button>
+                      <button type="button" aria-label={`Remove ${sample.name}`} onClick={() => removeSample(sample.code)} className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"><X className="size-3" /></button>
                     </div>
                   ))}
                   {draft.samples.length === 0 && <p className="py-3 text-center text-[10px] text-muted-foreground">No samples in the bag yet.</p>}

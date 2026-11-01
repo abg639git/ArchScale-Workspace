@@ -112,6 +112,7 @@ interface AppRailProps {
   activeId: RailAppId
   onSelect: (id: RailAppId) => void
   onSelectPreviewItem: (id: RailAppId, item: string) => void
+  onPreviewChange: (open: boolean) => void
   isSidebarOpen: boolean
   onToggleSidebar: () => void
   onOpenMore: () => void
@@ -213,6 +214,7 @@ const AppRailBase: React.FC<AppRailProps> = ({
   activeId,
   onSelect,
   onSelectPreviewItem,
+  onPreviewChange,
   isSidebarOpen,
   onToggleSidebar,
   onOpenMore,
@@ -246,6 +248,12 @@ const AppRailBase: React.FC<AppRailProps> = ({
     [cancelPreviewClose]
   )
 
+  React.useEffect(() => {
+    onPreviewChange(Boolean(preview && !isSidebarOpen))
+  }, [isSidebarOpen, onPreviewChange, preview])
+
+  React.useEffect(() => () => onPreviewChange(false), [onPreviewChange])
+
   const profileInitials = profileName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()
 
   const showPreview = (id: RailAppId, target: HTMLButtonElement) => {
@@ -274,7 +282,7 @@ const AppRailBase: React.FC<AppRailProps> = ({
   return (
     <TooltipProvider delayDuration={150}>
       <aside
-        className="shell-chrome shell-elevation relative flex h-full w-[4.5rem] shrink-0 flex-col items-center rounded-xl py-3 select-none"
+        className="shell-chrome shell-elevation relative flex h-full w-[4.5rem] shrink-0 flex-col items-center rounded-xl border-0 py-3 select-none"
         onMouseLeave={schedulePreviewClose}
       >
         {/* Primary App Rail Icons */}

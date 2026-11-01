@@ -186,7 +186,7 @@ export const Sidebar = React.forwardRef<
       >
         <div
           className={cn(
-            "duration-200 relative flex h-full w-[--sidebar-width] flex-col overflow-hidden rounded-xl border border-sidebar-border bg-sidebar transition-[left,right,width] ease-linear",
+            "duration-200 relative flex h-full w-[--sidebar-width] flex-col overflow-hidden rounded-xl border-0 bg-sidebar transition-[left,right,width] ease-linear",
             state === "collapsed" && "hidden"
           )}
         >

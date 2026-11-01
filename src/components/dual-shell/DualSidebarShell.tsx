@@ -11,7 +11,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
 import {
   SidebarInset,
   SidebarProvider,
@@ -141,6 +140,7 @@ function ShellContent({
 }) {
   const { open, toggleSidebar, setOpen } = useSidebar()
   const [shellPanel, setShellPanel] = React.useState<ShellPanel>(null)
+  const [railPreviewOpen, setRailPreviewOpen] = React.useState(false)
   const [profile, setProfile] = usePersistentState<LocalProfile>("archscale.profile", { name: "Sam Doe", email: "sam@example.com" })
   const [inviteDrafts, setInviteDrafts] = usePersistentState<InviteDraft[]>("archscale.invite.drafts", [])
   const [shellFeedback, setShellFeedback] = React.useState("")
@@ -209,7 +209,8 @@ function ShellContent({
 
   return (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-white">
-      <header className="shell-chrome flex h-14 shrink-0 items-center">
+      <header className="shell-chrome h-14 shrink-0 border-0">
+        <div className={cn("flex h-full items-center transition-[filter] duration-150", railPreviewOpen && "blur-[2px]")}>
         <div className="flex h-full w-14 shrink-0 items-center justify-center">
           <button
             onClick={() => {
@@ -247,7 +248,6 @@ function ShellContent({
         <div className="flex min-w-0 flex-1 items-center justify-between px-4">
           <div className="flex items-center gap-2.5">
             <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="h-4" />
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
@@ -296,6 +296,7 @@ function ShellContent({
             </button>
           </div>
         </div>
+        </div>
       </header>
 
       <div className="shell-chrome flex min-h-0 flex-1 gap-3 p-3">
@@ -304,6 +305,7 @@ function ShellContent({
           activeId={activeRailId}
           onSelect={handleRailSelect}
           onSelectPreviewItem={handlePreviewItem}
+          onPreviewChange={setRailPreviewOpen}
           isSidebarOpen={open}
           onToggleSidebar={toggleSidebar}
           onOpenMore={() => setShellPanel("quick")}
@@ -315,7 +317,7 @@ function ShellContent({
 
         {/* 2. Collapsible Secondary Sidebar */}
         <ApplicationSidebar
-          className="h-full"
+          className={cn("h-full transition-[filter] duration-150", railPreviewOpen && "blur-[2px]")}
           activeRailId={activeRailId}
           activeItem={activeItem}
           onSelectItem={handleSelectItem}
@@ -325,7 +327,8 @@ function ShellContent({
         {/* 3. Main Workspace Inset Area */}
         <SidebarInset
           className={cn(
-            "shell-elevation min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border",
+            "shell-elevation min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border-0 transition-[filter] duration-150",
+            railPreviewOpen && "blur-[2px]",
             open && "-ml-2"
           )}
         >
