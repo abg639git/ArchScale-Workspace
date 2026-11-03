@@ -8,7 +8,7 @@ import {
   Clock3,
   ListTodo,
   Search,
-} from "lucide-react"
+} from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 
 type TaskStatus = "To Do" | "In Progress" | "Completed"

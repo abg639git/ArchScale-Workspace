@@ -1,7 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, ClipboardList, ContactRound, FlaskConical, Package, Palette, Play, Plus, Store, X } from "lucide-react"
+import {
+  ArrowRight,
+  Bell,
+  Grid3X3,
+  MessageCircle,
+  Plus,
+  Settings,
+  X,
+} from "@/components/ui/icons"
 
 import {
   Breadcrumb,
@@ -17,7 +25,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { AppRail, type RailAppId } from "./AppRail"
+import { AppRail } from "./AppRail"
+import { RAIL_PREVIEW_CONTENT, type RailAppId } from "./rail-content"
 import { ApplicationSidebar, defaultSidebarData } from "./ApplicationSidebar"
 import { cn } from "@/lib/utils"
 import { usePersistentState } from "@/hooks/use-persistent-state"
@@ -218,7 +227,7 @@ function ShellContent({
               setActiveItem("Contacts")
               if (!open) toggleSidebar()
             }}
-            className="shell-brand shell-interaction flex size-9 items-center justify-center rounded-lg text-white shadow-sm transition-transform hover:scale-105 hover:shadow-md active:scale-95"
+            className="shell-brand shell-interaction flex size-9 translate-x-3 items-center justify-center rounded-lg text-white shadow-sm transition-transform hover:scale-105 hover:shadow-md active:scale-95"
             title="ArchScale Hub"
           >
             <span className="text-base font-bold tracking-tight">A</span>
@@ -276,23 +285,48 @@ function ShellContent({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                navigateTo("workspace", "Contacts")
-              }}
-              className="shell-interaction hidden sm:inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-xs hover:bg-accent"
+              onClick={() => setShellPanel("quick")}
+              aria-label="New action"
+              title="New action"
+              className="shell-interaction flex size-10 items-center justify-center rounded-md text-[#f05a24] hover:bg-black/5"
             >
-              <Play className="size-3.5 fill-current" />
-              <span>Preview</span>
+              <Plus className="size-6" strokeWidth={2.5} />
             </button>
             <button
               type="button"
-              onClick={() => {
-                setShellPanel("quick")
-              }}
-              className="shell-interaction inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-xs hover:bg-primary/90"
+              onClick={() => setShellPanel("invite")}
+              aria-label="Messages"
+              title="Messages"
+              className="shell-interaction flex size-10 items-center justify-center rounded-md text-[#4a463f] hover:bg-black/5"
             >
-              <Plus className="size-3.5" />
-              <span className="hidden sm:inline">New Action</span>
+              <MessageCircle className="size-6" strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShellFeedback("Notifications are not available yet.")}
+              aria-label="Notifications"
+              title="Notifications"
+              className="shell-interaction flex size-10 items-center justify-center rounded-md text-[#4a463f] hover:bg-black/5"
+            >
+              <Bell className="size-6" strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShellPanel("preferences")}
+              aria-label="Settings"
+              title="Settings"
+              className="shell-interaction flex size-10 items-center justify-center rounded-md text-[#4a463f] hover:bg-black/5"
+            >
+              <Settings className="size-6" strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShellPanel("quick")}
+              aria-label="Apps"
+              title="Apps"
+              className="shell-interaction flex size-10 items-center justify-center rounded-md text-[#4a463f] hover:bg-black/5"
+            >
+              <Grid3X3 className="size-6" strokeWidth={1.8} />
             </button>
           </div>
         </div>
@@ -344,6 +378,7 @@ function ShellContent({
         <ShellActionDialog
           key={shellPanel}
           panel={shellPanel}
+          activeRailId={activeRailId}
           profile={profile}
           inviteCount={inviteDrafts.length}
           sidebarDefaultOpen={sidebarDefaultOpen}
@@ -412,6 +447,7 @@ export function DualSidebarShell() {
 
 function ShellActionDialog({
   panel,
+  activeRailId,
   profile,
   inviteCount,
   sidebarDefaultOpen,
@@ -422,6 +458,7 @@ function ShellActionDialog({
   onSavePreferences,
 }: {
   panel: Exclude<ShellPanel, null>
+  activeRailId: RailAppId
   profile: LocalProfile
   inviteCount: number
   sidebarDefaultOpen: boolean
@@ -444,8 +481,9 @@ function ShellActionDialog({
     return () => window.removeEventListener("keydown", closeOnEscape)
   }, [onClose])
 
+  const railContent = RAIL_PREVIEW_CONTENT[activeRailId]
   const title = panel === "quick"
-    ? "Quick actions"
+    ? railContent.title
     : panel === "invite"
       ? "Invite draft"
       : panel === "account"
@@ -454,32 +492,30 @@ function ShellActionDialog({
           ? "Preferences"
           : "Sign out unavailable"
 
-  const pageLinks = [
-    { rail: "workspace" as const, item: "Tasks list", label: "Task list", icon: <ClipboardList className="size-4" /> },
-    { rail: "workspace" as const, item: "Contacts", label: "Contacts", icon: <ContactRound className="size-4" /> },
-    { rail: "library" as const, item: "Material information", label: "Material information", icon: <Palette className="size-4" /> },
-    { rail: "library" as const, item: "Swatch & Sample", label: "Swatch & Sample", icon: <FlaskConical className="size-4" /> },
-    { rail: "products" as const, item: "Item list", label: "Item list", icon: <Package className="size-4" /> },
-    { rail: "products" as const, item: "Stocks", label: "Stocks", icon: <Package className="size-4" /> },
-    { rail: "products" as const, item: "Issued report", label: "Issued report", icon: <ClipboardList className="size-4" /> },
-    { rail: "products" as const, item: "Vendors", label: "Vendors", icon: <Store className="size-4" /> },
-  ]
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <section role="dialog" aria-modal="true" aria-labelledby="shell-action-title" className="w-full max-w-md overflow-hidden rounded-lg border border-border bg-background shadow-2xl">
         <header className="flex items-start justify-between border-b border-border p-4">
-          <div><h2 id="shell-action-title" className="text-base font-semibold">{title}</h2><p className="mt-1 text-xs text-muted-foreground">ArchScale Hub</p></div>
+          <div><h2 id="shell-action-title" className="text-base font-semibold">{title}</h2><p className="mt-1 text-xs text-muted-foreground">{panel === "quick" ? "Section information" : "ArchScale Hub"}</p></div>
           <button type="button" onClick={onClose} aria-label="Close dialog" className="flex size-8 items-center justify-center rounded text-muted-foreground hover:bg-accent"><X className="size-4" /></button>
         </header>
 
         {panel === "quick" && (
           <div className="grid grid-cols-1 gap-1 p-3 sm:grid-cols-2">
-            {pageLinks.map((action) => (
-              <button type="button" key={`${action.rail}-${action.item}`} onClick={() => onNavigate(action.rail, action.item)} className="flex h-10 items-center gap-2 rounded-md border border-transparent px-2 text-left text-xs hover:border-border hover:bg-muted">
-                {action.icon}<span className="min-w-0 flex-1 truncate">{action.label}</span><ArrowRight className="size-3 text-muted-foreground" />
-              </button>
-            ))}
+            {railContent.items.map(({ label, icon: ItemIcon }) => {
+              const PageIcon = ItemIcon
+              const canNavigate = Boolean(pagesByRail[activeRailId]?.[label])
+
+              return canNavigate ? (
+                <button type="button" key={label} onClick={() => onNavigate(activeRailId, label)} className="flex h-10 items-center gap-2 rounded-md border border-transparent px-2 text-left text-xs hover:border-border hover:bg-muted">
+                  <PageIcon className="size-4" /><span className="min-w-0 flex-1 truncate">{label}</span><ArrowRight className="size-3 text-muted-foreground" />
+                </button>
+              ) : (
+                <div key={label} className="flex h-10 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground">
+                  <PageIcon className="size-4" /><span className="min-w-0 flex-1 truncate">{label}</span>
+                </div>
+              )
+            })}
           </div>
         )}
 

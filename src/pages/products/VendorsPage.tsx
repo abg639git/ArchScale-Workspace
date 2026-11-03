@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Building2, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react"
+import { Building2, Pencil, Plus, RefreshCw, Search, Trash2, X } from "@/components/ui/icons"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { cn } from "@/lib/utils"
 

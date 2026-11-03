@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronRight, MoreHorizontal } from "lucide-react"
+import { ChevronRight } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 
 const Breadcrumb = React.forwardRef<
@@ -92,4 +92,3 @@ export {
   BreadcrumbPage,
   BreadcrumbSeparator,
 }
-

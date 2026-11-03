@@ -2,28 +2,13 @@
 
 import * as React from "react"
 import {
-  BarChart3,
+  BookOpen,
   Box,
-  ClipboardList,
-  CircleHelp,
-  ContactRound,
-  FlaskConical,
-  FileCode,
-  FileText,
-  Folder,
-  GitBranch,
-  LayoutGrid,
-  History,
-  List,
+  Grid,
   MoreHorizontal,
-  Palette,
-  Search,
-  SlidersHorizontal,
-  Store,
-  Users,
-  UserRound,
   UserRoundPlus,
-} from "lucide-react"
+} from "@/components/ui/icons"
+import { RAIL_PREVIEW_CONTENT, type RailAppId } from "./rail-content"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -41,17 +26,6 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-export type RailAppId =
-  | "workspace"
-  | "library"
-  | "products"
-  | "overview"
-  | "explorer"
-  | "search"
-  | "projects"
-  | "team"
-  | "settings"
-
 export interface RailApp {
   id: RailAppId
   label: string
@@ -59,52 +33,9 @@ export interface RailApp {
   shortcut?: string
 }
 
-// Feather glyphs inlined from feather-icons.com (identical path data) so the
-// react-feather package can be dropped — 2 icons don't justify a dependency.
-// Renders pixel-identically: className="size-5" wins over the width/height attrs.
-type FeatherGlyphProps = React.SVGProps<SVGSVGElement>
-
-const FeatherGrid: React.FC<FeatherGlyphProps> = (props) => (
-  <svg
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    {...props}
-  >
-    <rect x="3" y="3" width="7" height="7" />
-    <rect x="14" y="3" width="7" height="7" />
-    <rect x="14" y="14" width="7" height="7" />
-    <rect x="3" y="14" width="7" height="7" />
-  </svg>
-)
-
-const FeatherBookOpen: React.FC<FeatherGlyphProps> = (props) => (
-  <svg
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    {...props}
-  >
-    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-  </svg>
-)
-
 export const RAIL_APPS: RailApp[] = [
-  { id: "workspace", label: "Workspace", icon: FeatherGrid },
-  { id: "library", label: "Library", icon: FeatherBookOpen },
+  { id: "workspace", label: "Workspace", icon: Grid },
+  { id: "library", label: "Library", icon: BookOpen },
   { id: "products", label: "Products", icon: Box },
 ]
 
@@ -120,94 +51,6 @@ interface AppRailProps {
   onProfileAction: (action: "account" | "preferences" | "logout") => void
   profileName: string
   profileEmail: string
-}
-
-type RailPreviewItem = {
-  label: string
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
-}
-
-const RAIL_PREVIEW_CONTENT: Record<
-  RailAppId,
-  { title: string; items: RailPreviewItem[] }
-> = {
-  workspace: {
-    title: "Workspace",
-    items: [
-      { label: "Contacts", icon: Users },
-      { label: "Tasks list", icon: ClipboardList },
-      { label: "My tasks", icon: UserRound },
-      { label: "Team tasks", icon: Users },
-    ],
-  },
-  library: {
-    title: "Library",
-    items: [
-      { label: "Material information", icon: Palette },
-      { label: "Swatch & Sample", icon: FlaskConical },
-    ],
-  },
-  products: {
-    title: "Products",
-    items: [
-      { label: "Item list", icon: List },
-      { label: "Stocks", icon: History },
-      { label: "Issued report", icon: ContactRound },
-      { label: "Vendors", icon: Store },
-    ],
-  },
-  overview: {
-    title: "Overview",
-    items: [
-      { label: "Dashboard", icon: LayoutGrid },
-      { label: "Tasks", icon: ClipboardList },
-      { label: "Roadmap", icon: BarChart3 },
-    ],
-  },
-  explorer: {
-    title: "Explorer",
-    items: [
-      { label: "Changes", icon: GitBranch },
-      { label: "README.md", icon: FileText },
-      { label: "api/hello/route.ts", icon: FileCode },
-      { label: "app", icon: Folder },
-      { label: "components", icon: Folder },
-      { label: "lib", icon: Folder },
-    ],
-  },
-  search: {
-    title: "Search",
-    items: [
-      { label: "Search files or commands...", icon: Search },
-      { label: "Dashboard.tsx", icon: FileCode },
-      { label: "ApplicationShell.tsx", icon: FileCode },
-      { label: "AppRail.tsx", icon: FileCode },
-    ],
-  },
-  projects: {
-    title: "Projects",
-    items: [
-      { label: "main", icon: GitBranch },
-      { label: "feature/dual-sidebar", icon: GitBranch },
-      { label: "chore/update-deps", icon: GitBranch },
-    ],
-  },
-  team: {
-    title: "Team",
-    items: [
-      { label: "John Doe", icon: UserRound },
-      { label: "Jasmine Kaur", icon: UserRound },
-      { label: "Ritik Verma", icon: UserRound },
-    ],
-  },
-  settings: {
-    title: "Settings",
-    items: [
-      { label: "Account", icon: UserRound },
-      { label: "Preferences", icon: SlidersHorizontal },
-      { label: "Help Center", icon: CircleHelp },
-    ],
-  },
 }
 
 const AppRailBase: React.FC<AppRailProps> = ({

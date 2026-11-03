@@ -1,6 +1,6 @@
 import * as React from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
-import { Check, LayoutGrid, List, Minus, MoreHorizontal, Pencil, Plus, RefreshCw, Search, ShoppingBag, Trash2, X } from "lucide-react"
+import { Check, LayoutGrid, List, Minus, MoreHorizontal, Pencil, Plus, RefreshCw, Search, ShoppingBag, Trash2, X } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { categories, initialItems, type InventoryItem, type ItemCategory } from "./inventory-data"

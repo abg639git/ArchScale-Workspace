@@ -11,7 +11,7 @@ import {
   Trash2,
   UsersRound,
   X,
-} from "lucide-react"
+} from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { ContactDetailsPanel } from "./ContactDetailsPanel"
@@ -102,7 +102,7 @@ export function DirectorySplitView({ title = "Contacts" }: DirectorySplitViewPro
   const [mobileView, setMobileView] = React.useState<"list" | "detail">("list")
   const [listRatio, setListRatio] = React.useState(0.4)
   const [isResizing, setIsResizing] = React.useState(false)
-  const [isCreating, setIsCreating] = React.useState(false)
+  const [creatingType, setCreatingType] = React.useState<DirectoryType | null>(null)
   const [editingContact, setEditingContact] = React.useState<DirectoryEntry | null>(null)
   const [deletingContact, setDeletingContact] = React.useState<DirectoryEntry | null>(null)
   const splitViewRef = React.useRef<HTMLDivElement>(null)
@@ -138,7 +138,7 @@ export function DirectorySplitView({ title = "Contacts" }: DirectorySplitViewPro
     setContacts((current) => current.some((entry) => entry.id === contact.id)
       ? current.map((entry) => entry.id === contact.id ? contact : entry)
       : [contact, ...current])
-    setIsCreating(false)
+    setCreatingType(null)
     setEditingContact(null)
     selectContact(contact.id)
   }
@@ -206,10 +206,10 @@ export function DirectorySplitView({ title = "Contacts" }: DirectorySplitViewPro
           </label>
           <button
             type="button"
-            onClick={() => setIsCreating(true)}
+            onClick={() => setCreatingType(browseFilter === "organizations" ? "organization" : "person")}
             className="shell-interaction h-9 shrink-0 rounded-lg bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90"
           >
-            Add New Contact
+            {browseFilter === "organizations" ? "Add New Organisation" : "Add New Contact"}
           </button>
           <button
             type="button"
@@ -347,12 +347,13 @@ export function DirectorySplitView({ title = "Contacts" }: DirectorySplitViewPro
         )}
       </div>
 
-      {(isCreating || editingContact) && (
+      {(creatingType || editingContact) && (
         <ContactFormDialog
-          key={editingContact?.id ?? "new-contact"}
+          key={editingContact?.id ?? `new-${creatingType}`}
           contact={editingContact}
+          initialType={creatingType ?? "person"}
           onClose={() => {
-            setIsCreating(false)
+            setCreatingType(null)
             setEditingContact(null)
           }}
           onSave={saveContact}
@@ -378,16 +379,18 @@ export function DirectorySplitView({ title = "Contacts" }: DirectorySplitViewPro
 
 function ContactFormDialog({
   contact,
+  initialType,
   onClose,
   onSave,
 }: {
   contact: DirectoryEntry | null
+  initialType: DirectoryType
   onClose: () => void
   onSave: (contact: DirectoryEntry) => void
 }) {
   const roleParts = contact?.role.split(" · ") ?? []
   const [name, setName] = React.useState(contact?.name ?? "")
-  const [type, setType] = React.useState<DirectoryType>(contact?.type ?? "person")
+  const [type, setType] = React.useState<DirectoryType>(contact?.type ?? initialType)
   const [role, setRole] = React.useState(contact ? (contact.type === "person" ? roleParts[0] ?? "" : contact.role) : "")
   const [organization, setOrganization] = React.useState(contact?.related.find((item) => item.label.toLowerCase() === "organisation")?.value ?? (contact?.type === "person" ? roleParts.at(-1) ?? "" : ""))
   const [email, setEmail] = React.useState(contact?.email ?? "")
@@ -413,7 +416,7 @@ function ContactFormDialog({
     const savedRole = type === "person" ? `${role.trim() || "Contact"} · ${savedOrganization}` : role.trim() || "Organization"
     const related = (contact?.related ?? []).filter((item) => !["organisation", "location"].includes(item.label.toLowerCase()))
     onSave({
-      id: contact?.id ?? `contact-${Date.now()}`,
+      id: contact?.id ?? `${type}-${Date.now()}`,
       type,
       name: savedName,
       role: savedRole,
@@ -440,20 +443,20 @@ function ContactFormDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <section role="dialog" aria-modal="true" aria-labelledby="contact-form-title" className="w-full max-w-lg overflow-hidden rounded-lg border border-border bg-background shadow-2xl">
         <header className="flex items-start justify-between border-b border-border p-4">
-          <div><h2 id="contact-form-title" className="text-base font-semibold">{contact ? "Edit contact" : "Add new contact"}</h2><p className="mt-1 text-xs text-muted-foreground">Changes are saved in this browser.</p></div>
+          <div><h2 id="contact-form-title" className="text-base font-semibold">{contact ? `Edit ${type === "organization" ? "organisation" : "contact"}` : `Add new ${type === "organization" ? "organisation" : "contact"}`}</h2><p className="mt-1 text-xs text-muted-foreground">Changes are saved in this browser.</p></div>
           <button type="button" onClick={onClose} aria-label="Close contact form" className="flex size-8 items-center justify-center rounded text-muted-foreground hover:bg-accent"><X className="size-4" /></button>
         </header>
         <form onSubmit={save} className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-          <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">Type</span><select value={type} onChange={(event) => setType(event.target.value as DirectoryType)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs"><option value="person">Person</option><option value="organization">Organization</option></select></label>
+          {contact && <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">Type</span><select value={type} onChange={(event) => setType(event.target.value as DirectoryType)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs"><option value="person">Person</option><option value="organization">Organisation</option></select></label>}
           <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">Status</span><select value={status} onChange={(event) => setStatus(event.target.value as DirectoryStatus)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs"><option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Inactive</option></select></label>
-          <label className="space-y-1 sm:col-span-2"><span className="block text-[10px] font-medium text-muted-foreground">{type === "person" ? "Name" : "Organization name"}</span><input required value={name} onChange={(event) => setName(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>
-          {type === "person" && <label className="space-y-1 sm:col-span-2"><span className="block text-[10px] font-medium text-muted-foreground">Organization</span><input required value={organization} onChange={(event) => setOrganization(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>}
+          <label className="space-y-1 sm:col-span-2"><span className="block text-[10px] font-medium text-muted-foreground">{type === "person" ? "Name" : "Organisation name"}</span><input required value={name} onChange={(event) => setName(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>
+          {type === "person" && <label className="space-y-1 sm:col-span-2"><span className="block text-[10px] font-medium text-muted-foreground">Organisation</span><input required value={organization} onChange={(event) => setOrganization(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>}
           <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">Role / industry</span><input value={role} onChange={(event) => setRole(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>
           <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">City</span><input value={city} onChange={(event) => setCity(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>
           <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>
           <label className="space-y-1"><span className="block text-[10px] font-medium text-muted-foreground">Phone</span><input value={phone} onChange={(event) => setPhone(event.target.value)} className="h-9 w-full rounded border border-input bg-background px-2 text-xs" /></label>
           {error && <p role="alert" className="text-xs text-destructive sm:col-span-2">{error}</p>}
-          <footer className="flex justify-end gap-2 border-t border-border pt-3 sm:col-span-2"><button type="button" onClick={onClose} className="h-8 rounded border border-input px-3 text-xs hover:bg-accent">Cancel</button><button type="submit" className="h-8 rounded bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">{contact ? "Save changes" : "Create contact"}</button></footer>
+          <footer className="flex justify-end gap-2 border-t border-border pt-3 sm:col-span-2"><button type="button" onClick={onClose} className="h-8 rounded border border-input px-3 text-xs hover:bg-accent">Cancel</button><button type="submit" className="h-8 rounded bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">{contact ? "Save changes" : `Create ${type === "organization" ? "organisation" : "contact"}`}</button></footer>
         </form>
       </section>
     </div>

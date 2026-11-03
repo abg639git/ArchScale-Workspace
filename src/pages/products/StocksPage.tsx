@@ -1,5 +1,5 @@
 import * as React from "react"
-import { AlertTriangle, Boxes, Minus, Plus, RefreshCw, Search, X } from "lucide-react"
+import { AlertTriangle, Boxes, Plus, RefreshCw, Search, X } from "@/components/ui/icons"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import { cn } from "@/lib/utils"
 import { categories, initialItems, type InventoryItem, type ItemCategory } from "./inventory-data"

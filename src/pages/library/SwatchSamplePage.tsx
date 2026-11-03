@@ -19,7 +19,7 @@ import {
   Truck,
   UserRound,
   X,
-} from "lucide-react"
+} from "@/components/ui/icons"
 import {
   DropdownMenu,
   DropdownMenuContent,

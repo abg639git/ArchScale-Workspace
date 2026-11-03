@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Download, RefreshCw, Search } from "lucide-react"
+import { Download, RefreshCw, Search } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 
 type LocalRequest = {

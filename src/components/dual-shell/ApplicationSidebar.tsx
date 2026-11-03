@@ -21,7 +21,7 @@ import {
   Store,
   User,
   Users,
-} from "lucide-react"
+} from "@/components/ui/icons"
 
 import {
   Collapsible,
@@ -44,7 +44,7 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import type { RailAppId } from "./AppRail"
+import type { RailAppId } from "./rail-content"
 
 // Base nav item - used by simple sidebars
 export type NavItem = {

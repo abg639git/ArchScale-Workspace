@@ -1,6 +1,6 @@
 import * as React from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
-import { MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react"
+import { MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, X } from "@/components/ui/icons"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Building2, Search, Star, UserRound } from "lucide-react"
+import { Building2, Search, Star, UserRound } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 import {
   getInitials,

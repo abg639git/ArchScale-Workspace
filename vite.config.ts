@@ -54,7 +54,7 @@ export default defineConfig({
             return 'vendor-react'
           }
           if (id.includes('@radix-ui')) return 'vendor-radix'
-          if (id.includes('lucide-react') || id.includes('react-feather')) return 'vendor-icons'
+          if (id.includes('react-feather')) return 'vendor-icons'
           return 'vendor'
         },
       },

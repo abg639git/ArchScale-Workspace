@@ -20,7 +20,7 @@ import {
   SlidersHorizontal,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 
 type TaskStatus = "To Do" | "In Progress" | "Completed"
