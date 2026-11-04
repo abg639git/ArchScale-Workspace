@@ -65,6 +65,14 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
+        "panel-slide-in": {
+          from: { opacity: "0", transform: "translateX(100%)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
         "contact-detail-enter": {
           from: { opacity: "0", transform: "translateX(10px)" },
           to: { opacity: "1", transform: "translateX(0)" },
@@ -79,6 +87,8 @@ export default {
         },
       },
       animation: {
+        "panel-slide-in": "panel-slide-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        "fade-in": "fade-in 200ms ease-out both",
         "contact-detail-enter": "contact-detail-enter 220ms ease-out both",
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",

@@ -27,6 +27,7 @@ import type {
   SampleRequest,
   WorkflowDocument,
 } from "./types"
+import { REQUEST_PRIORITIES, REQUEST_TYPES, SAMPLE_CONDITIONS } from "./types"
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -97,6 +98,8 @@ export function validateRequestForSubmit(request: SampleRequest): string | null 
     if (!String(value ?? "").trim()) missing.push(label)
   })
   if (missing.length) return `Complete the required fields: ${missing.join(", ")}.`
+  if (!REQUEST_TYPES.some((value) => value === request.requestType)) return "Select a valid request type."
+  if (!REQUEST_PRIORITIES.some((value) => value === request.priority)) return "Select a valid request priority."
   if (!request.lines.length) return "Select at least one sample from the catalogue."
   const invalidLine = request.lines.find(
     (line) => !line.itemId || !Number.isInteger(line.quantity) || line.quantity < 1
@@ -343,9 +346,13 @@ export function validateIssue(draft: IssueDraft): string | null {
   if (!draft.issuedBy.trim()) return "Record who issued the samples (Issued by)."
   if (!draft.issuedTo.trim()) return "Record who received the handover (Issued to)."
   if (!draft.returnByDate) return "Enter the return-by date."
+  if (!SAMPLE_CONDITIONS.some((value) => value === draft.conditionAtIssue)) {
+    return "Select a valid condition at issue."
+  }
   if (!draft.bagLines.length) return "This bag has no sample lines to issue."
 
   let total = 0
+  const quantitiesByItem = new Map<string, number>()
   for (const bagLine of draft.bagLines) {
     const quantity = draft.quantities[bagLine.id] ?? 0
     if (!isWholeNumber(quantity)) return `${bagLine.name}: quantity must be a whole number.`
@@ -366,7 +373,18 @@ export function validateIssue(draft: IssueDraft): string | null {
     if (quantity > allocationLine.remaining) {
       return `${bagLine.name}: cannot exceed the ${allocationLine.remaining} unit(s) still to issue.`
     }
+    quantitiesByItem.set(bagLine.itemId, (quantitiesByItem.get(bagLine.itemId) ?? 0) + quantity)
     total += quantity
+  }
+  for (const [itemId, quantity] of quantitiesByItem) {
+    const allocationLine = draft.allocation[request.id]?.lines[itemId]
+    const bagLine = draft.bagLines.find((line) => line.itemId === itemId)
+    if (allocationLine && quantity > allocationLine.reserved) {
+      return `${bagLine?.name ?? itemId}: total issued quantity cannot exceed the ${allocationLine.reserved} reserved unit(s).`
+    }
+    if (allocationLine && quantity > allocationLine.remaining) {
+      return `${bagLine?.name ?? itemId}: total issued quantity cannot exceed the ${allocationLine.remaining} unit(s) still to issue.`
+    }
   }
   if (total === 0) return "Enter an issued quantity greater than zero for at least one sample."
   return null
@@ -693,6 +711,12 @@ export function closureBlockers(context: ClosureContext): BlockerCheck {
         `${sample.name}: "Damaged" disposition (${damagedDisposition}) must equal the verified damaged return quantity (${sample.receivedBackQuantity}).`
       )
     }
+    if (!sample.returnRequired && (sample.returnedQuantity > 0 || sample.receivedBackQuantity > 0)) {
+      blockers.push(`${sample.name}: return quantities are recorded even though no return was required.`)
+    }
+    if (sample.receivedBackQuantity > sample.returnedQuantity) {
+      blockers.push(`${sample.name}: verified return quantity exceeds the planned returned quantity.`)
+    }
 
     const missingApproval = sample.dispositions.find(
       (entry) =>
@@ -718,12 +742,16 @@ export function closureBlockers(context: ClosureContext): BlockerCheck {
       (review) => review.requestId === request.id && review.itemId === sample.itemId
     )
     if (sample.receivedQuantity > 0) {
-      if (!reviews.length || !isFinalized(reviews[0])) {
-        blockers.push(`${sample.name}: Stage 4 review is not finalized for the received units.`)
+      const reviewedQuantity = reviews.reduce((sum, review) => sum + review.receivedQuantity, 0)
+      if (!reviews.length || reviews.some((review) => !isFinalized(review)) || reviewedQuantity !== sample.receivedQuantity) {
+        blockers.push(`${sample.name}: Stage 4 review is not finalized for all received units.`)
       }
     }
   })
 
+  if (request.status === "Draft" || request.status === "Submitted") {
+    blockers.push("Accept the request in Stage 2 before closing it.")
+  }
   if (!record.closedBy.trim()) blockers.push("Enter who is closing the request (Closed By).")
   if (!record.closureDate) blockers.push("Enter the closure date.")
 
@@ -769,7 +797,7 @@ export function planReturnStocking(sample: ClosureSample, requestId: string): Re
   if (!sample.conditionAtReturn) return failure("Select the condition at return.")
   if (!Number.isInteger(quantity) || quantity < 0)
     return failure("Received-back quantity must be a whole number.")
-  if (sample.returnedQuantity > 0 && quantity > sample.returnedQuantity) {
+  if (quantity > sample.returnedQuantity) {
     return failure("Received-back quantity cannot exceed the returned quantity.")
   }
   if (quantity > sample.issuedQuantity) {

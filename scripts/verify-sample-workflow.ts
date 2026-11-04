@@ -16,6 +16,8 @@ import {
   resolvePendingDemand,
   startReview,
   submitRequest,
+  updateDispatchStatus,
+  updateClosureSample,
   verifyReturn,
 } from "../src/pages/library/sample-workflow/operations"
 import {
@@ -154,7 +156,15 @@ function receiptFor(
   conditionAtReceipt: "Good" | "Used" | "Damaged" = "Good",
   notes = "Verification notes"
 ) {
-  return confirmReceipt(document, {
+  let deliveredDocument = document
+  for (const status of ["Picked Up", "In Transit", "Delivered"] as const) {
+    const dispatch = deliveredDocument.dispatches.find((entry) => entry.id === dispatchId)!
+    if (dispatch.status === "Delivered") break
+    const result = updateDispatchStatus(deliveredDocument, dispatchId, status, "Coordinator")
+    assert.equal(result.error, null, result.error ?? "")
+    deliveredDocument = result.document
+  }
+  return confirmReceipt(deliveredDocument, {
     dispatchId,
     receivedDate: "2026-12-11",
     receiver: "Requester",
@@ -298,6 +308,40 @@ test("10. Multiple dispatches preserve each issue and parent request", () => {
   assert.ok(dispatch2.document.dispatches.every((dispatch) => dispatch.requestId === made.request.id))
 })
 
+test("10a. Dispatches follow stage order and cannot duplicate an issue", () => {
+  const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 2 }])
+  const stock = items().map((item) => item.id === "A" ? { ...item, stock: 2 } : item)
+  const bag = bagFor(made.document, made.request.id, [{ itemId: "A", quantity: 2 }])
+  const issued = issueFor(bag.document, stock, made.request.id, bag.bag.id, { [bag.bag.lines[0].id]: 2 })
+  const dispatched = dispatchFor(issued.document, issued.document.issues[0].id)
+  const dispatch = dispatched.document.dispatches[0]
+
+  const duplicate = createDispatch(dispatched.document, dispatch)
+  assert.ok(duplicate.error?.includes("already has a dispatch"))
+  assert.ok(updateDispatchStatus(dispatched.document, dispatch.id, "In Transit", "Coordinator").error)
+  assert.ok(confirmReceipt(dispatched.document, {
+    dispatchId: dispatch.id,
+    receivedDate: "2026-12-11",
+    receiver: "Requester",
+    custodyHolder: "Requester",
+    conditionAtReceipt: "Good",
+    proofOfDelivery: "",
+    notes: "Verification notes",
+    lines: [],
+  }).error?.includes("delivered"))
+
+  const pickedUp = updateDispatchStatus(dispatched.document, dispatch.id, "Picked Up", "Coordinator")
+  assert.equal(pickedUp.error, null)
+  assert.ok(updateDispatchStatus(pickedUp.document, dispatch.id, "Ready for Pickup", "Coordinator").error)
+  const inTransit = updateDispatchStatus(pickedUp.document, dispatch.id, "In Transit", "Coordinator")
+  assert.equal(inTransit.error, null)
+  const delivered = updateDispatchStatus(inTransit.document, dispatch.id, "Delivered", "Coordinator")
+  assert.equal(delivered.error, null)
+  const receipt = receiptFor(delivered.document, dispatch.id, [{ itemId: "A", receivedQuantity: 2 }])
+  assert.equal(receipt.error, null)
+  assert.equal(receipt.document.dispatches[0].status, "Receipt Confirmed")
+})
+
 test("11. Multiple partial receipts accumulate to the issued quantity", () => {
   const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 4 }])
   const stock = items().map((item) => item.id === "A" ? { ...item, stock: 4 } : item)
@@ -312,6 +356,24 @@ test("11. Multiple partial receipts accumulate to the issued quantity", () => {
   const totals = second.document.receipts.flatMap((receipt) => receipt.lines)
     .reduce((sum, line) => sum + line.receivedQuantity, 0)
   assert.equal(totals, 4)
+  assert.equal(second.document.dispatches[0].status, "Receipt Confirmed")
+})
+
+test("11a. Completed receipt lines do not block later outstanding lines", () => {
+  const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 2 }, { itemId: "B", quantity: 2 }])
+  const stock = items().map((item) => ["A", "B"].includes(item.id) ? { ...item, stock: 2 } : item)
+  const bag = bagFor(made.document, made.request.id, [{ itemId: "A", quantity: 2 }, { itemId: "B", quantity: 2 }])
+  const issued = issueFor(bag.document, stock, made.request.id, bag.bag.id, Object.fromEntries(bag.bag.lines.map((line) => [line.id, 2])))
+  const dispatched = dispatchFor(issued.document, issued.document.issues[0].id)
+  const first = receiptFor(dispatched.document, dispatched.document.dispatches[0].id, [
+    { itemId: "A", receivedQuantity: 2 },
+    { itemId: "B", receivedQuantity: 1, discrepancyNotes: "One unit is still in transit" },
+  ])
+  assert.equal(first.error, null)
+  const second = receiptFor(first.document, dispatched.document.dispatches[0].id, [
+    { itemId: "B", receivedQuantity: 1 },
+  ])
+  assert.equal(second.error, null)
   assert.equal(second.document.dispatches[0].status, "Receipt Confirmed")
 })
 
@@ -364,6 +426,28 @@ test("13. Review decisions are sample-specific and deferred review needs a date"
   assert.notEqual(deferred.document.reviews.find((review) => review.itemId === "B")?.cycles.length, 1)
 })
 
+test("13a. Review decisions require a started review and matching request", () => {
+  const first = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 1 }])
+  const second = makeRequest(first.document, [{ itemId: "B", quantity: 1 }])
+  const stock = items().map((item) => ["A", "B"].includes(item.id) ? { ...item, stock: 1 } : item)
+  const bag = bagFor(second.document, first.request.id, [{ itemId: "A", quantity: 1 }])
+  const issued = issueFor(bag.document, stock, first.request.id, bag.bag.id, { [bag.bag.lines[0].id]: 1 })
+  const dispatch = dispatchFor(issued.document, issued.document.issues[0].id)
+  const received = receiptFor(dispatch.document, dispatch.document.dispatches[0].id, [{ itemId: "A", receivedQuantity: 1 }])
+  const review = received.document.reviews[0]
+  const draft = {
+    requestId: first.request.id, reviewId: review.id, reviewer: "Studio", reviewerRole: "Studio" as const,
+    reviewDate: "2026-12-12", dueDate: "2026-12-12", decision: "Approved" as const,
+    comments: "", feedback: "", followUp: "None" as const, returnInstruction: "Return required" as const,
+  }
+  assert.ok(recordReviewDecision(received.document, draft).error?.includes("Start the review"))
+  const started = startReview(received.document, {
+    reviewId: review.id, reviewer: "Studio", reviewerRole: "Studio", dueDate: "2026-12-12",
+  })
+  assert.equal(started.error, null)
+  assert.ok(recordReviewDecision(started.document, { ...draft, requestId: second.request.id }).error?.includes("does not belong"))
+})
+
 test("14. Revision cycles preserve prior decisions and feedback", () => {
   const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 1 }])
   const stock = items().map((item) => item.id === "A" ? { ...item, stock: 1 } : item)
@@ -372,17 +456,36 @@ test("14. Revision cycles preserve prior decisions and feedback", () => {
   const dispatch = dispatchFor(issued.document, issued.document.issues[0].id)
   const received = receiptFor(dispatch.document, dispatch.document.dispatches[0].id, [{ itemId: "A", receivedQuantity: 1 }])
   const review = received.document.reviews[0]
-  const first = recordReviewDecision(received.document, {
+  const firstReview = startReview(received.document, {
+    reviewId: review.id, reviewer: "Client", reviewerRole: "Client", dueDate: "2026-12-12",
+  })
+  const first = recordReviewDecision(firstReview.document, {
     requestId: made.request.id, reviewId: review.id, reviewer: "Client", reviewerRole: "Client",
     reviewDate: "2026-12-12", dueDate: "2026-12-12", decision: "Revision Required",
     comments: "", feedback: "Revise color", followUp: "Resubmit", returnInstruction: "Return required",
   })
   assert.equal(first.error, null)
-  const second = recordReviewDecision(first.document, {
+  const final = recordFinalApproval(first.document, {
+    reviewId: review.id, finalApproval: "Changes Required", decisionDate: "2026-12-12",
+    approvedBy: "Approver", coordinator: "Coordinator", finalComments: "Revision required",
+  })
+  assert.equal(final.error, null)
+  const nextReview = startReview(final.document, {
+    reviewId: review.id, reviewer: "Client", reviewerRole: "Client", dueDate: "2026-12-20",
+  })
+  const second = recordReviewDecision(nextReview.document, {
     requestId: made.request.id, reviewId: review.id, reviewer: "Client", reviewerRole: "Client",
     reviewDate: "2026-12-20", dueDate: "2026-12-20", decision: "Approved",
     comments: "", feedback: "", followUp: "None", returnInstruction: "Return required",
   })
+  const secondFinal = recordFinalApproval(second.document, {
+    reviewId: review.id, finalApproval: "Approved", decisionDate: "2026-12-20",
+    approvedBy: "Approver", coordinator: "Coordinator", finalComments: "",
+  })
+  assert.equal(secondFinal.error, null)
+  assert.ok(startReview(secondFinal.document, {
+    reviewId: review.id, reviewer: "Client", reviewerRole: "Client", dueDate: "2026-12-21",
+  }).error?.includes("only after changes are required"))
   const cycles = second.document.reviews[0].cycles
   assert.equal(cycles.length, 2)
   assert.equal(cycles[0].feedback, "Revise color")
@@ -397,6 +500,9 @@ test("15. Partial verified good returns stock once and all disposition types kee
   const dispatch = dispatchFor(issued.document, issued.document.issues[0].id)
   let doc = receiptFor(dispatch.document, dispatch.document.dispatches[0].id, [{ itemId: "A", receivedQuantity: 6 }]).document
   const review = doc.reviews[0]
+  doc = startReview(doc, {
+    reviewId: review.id, reviewer: "Studio", reviewerRole: "Studio", dueDate: "2026-12-12",
+  }).document
   doc = recordReviewDecision(doc, {
     requestId: made.request.id, reviewId: review.id, reviewer: "Studio", reviewerRole: "Studio",
     reviewDate: "2026-12-12", dueDate: "2026-12-12", decision: "Approved",
@@ -406,7 +512,16 @@ test("15. Partial verified good returns stock once and all disposition types kee
     reviewId: review.id, finalApproval: "Approved", decisionDate: "2026-12-12",
     approvedBy: "Approver", coordinator: "Coordinator", finalComments: "",
   }).document
-  const returned = verifyReturn(doc, issued.items, made.request.id, "A", {
+  const noPlan = verifyReturn(doc, issued.items, made.request.id, "A", {
+    receivedBackQuantity: 1, conditionAtReturn: "Good", verifiedBy: "Coordinator",
+    inspectionNotes: "Good", actualReturnDate: "2026-12-22",
+  })
+  assert.ok(noPlan.error?.includes("expected return date and quantity"))
+  const plan = updateClosureSample(doc, made.request.id, "A", {
+    returnRequired: true, expectedReturnDate: "2026-12-22", returnedQuantity: 1,
+  })
+  assert.equal(plan.error, null)
+  const returned = verifyReturn(plan.document, issued.items, made.request.id, "A", {
     receivedBackQuantity: 1, conditionAtReturn: "Good", verifiedBy: "Coordinator",
     inspectionNotes: "Good", actualReturnDate: "2026-12-22",
   })
@@ -416,6 +531,11 @@ test("15. Partial verified good returns stock once and all disposition types kee
     inspectionNotes: "Good", actualReturnDate: "2026-12-22",
   })
   assert.equal(repeated.items.find((item) => item.id === "A")?.stock, 1)
+  const changedCondition = verifyReturn(returned.document, returned.items, made.request.id, "A", {
+    receivedBackQuantity: 1, conditionAtReturn: "Damaged", verifiedBy: "Coordinator",
+    inspectionNotes: "Condition changed", actualReturnDate: "2026-12-22",
+  })
+  assert.ok(changedCondition.error?.includes("cannot be changed"))
   let closureDoc = returned.document
   const types = ["Returned", "Damaged", "Retained", "Consumed", "Lost", "Converted"] as const
   for (const type of types) {
@@ -431,7 +551,50 @@ test("15. Partial verified good returns stock once and all disposition types kee
   assert.equal(new Set(record.samples[0].dispositions.map((entry) => entry.id)).size, 6)
 })
 
+test("15a. Closure waits for every dispatch review for a sample", () => {
+  const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 2 }])
+  const stock = items().map((item) => item.id === "A" ? { ...item, stock: 2 } : item)
+  const bag = bagFor(made.document, made.request.id, [{ itemId: "A", quantity: 2 }])
+  const firstIssue = issueFor(bag.document, stock, made.request.id, bag.bag.id, { [bag.bag.lines[0].id]: 1 })
+  const secondIssue = issueFor(firstIssue.document, firstIssue.items, made.request.id, bag.bag.id, { [bag.bag.lines[0].id]: 1 })
+  const firstDispatch = dispatchFor(secondIssue.document, secondIssue.document.issues[0].id)
+  const firstReceipt = receiptFor(firstDispatch.document, firstDispatch.document.dispatches[0].id, [{ itemId: "A", receivedQuantity: 1 }])
+  const secondDispatch = dispatchFor(firstReceipt.document, secondIssue.document.issues[1].id)
+  const secondReceipt = receiptFor(secondDispatch.document, secondDispatch.document.dispatches[1].id, [{ itemId: "A", receivedQuantity: 1 }])
+  const firstReview = secondReceipt.document.reviews[0]
+  const started = startReview(secondReceipt.document, {
+    reviewId: firstReview.id, reviewer: "Studio", reviewerRole: "Studio", dueDate: "2026-12-12",
+  })
+  const decided = recordReviewDecision(started.document, {
+    requestId: made.request.id, reviewId: firstReview.id, reviewer: "Studio", reviewerRole: "Studio",
+    reviewDate: "2026-12-12", dueDate: "2026-12-12", decision: "Approved",
+    comments: "", feedback: "", followUp: "None", returnInstruction: "Return required",
+  })
+  const finalized = recordFinalApproval(decided.document, {
+    reviewId: firstReview.id, finalApproval: "Approved", decisionDate: "2026-12-12",
+    approvedBy: "Approver", coordinator: "Coordinator", finalComments: "",
+  })
+  const request = finalized.document.requests.find((entry) => entry.id === made.request.id)!
+  const check = closureBlockers({
+    request,
+    record: {
+      requestId: request.id, project: request.project, samples: closureSamples(request, finalized.document),
+      closureStatus: "Pending Closure", closureDate: "2026-12-31", closedBy: "Coordinator",
+      closureNotes: "", history: [],
+    },
+    document: finalized.document,
+    allocation: allocateReservations(finalized.document.requests, finalized.document.issues, firstIssue.items),
+  })
+  assert.ok(check.blockers.some((message) => message.includes("not finalized for all received units")))
+})
+
 test("16. Closure blocks uncancelled demand and succeeds after pending demand is resolved", () => {
+  const submitted = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 1 }], "Submitted")
+  const prematureClose = closeRequest(submitted.document, submitted.document.requests[0].id, {
+    closedBy: "Coordinator", closureDate: "2026-12-31", closureNotes: "",
+  }, allocateReservations(submitted.document.requests, [], items()))
+  assert.ok(prematureClose.error?.includes("Accept the request"))
+
   const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 2 }])
   const stock = items().map((item) => item.id === "A" ? { ...item, stock: 2 } : item)
   const allocation = allocateReservations(made.document.requests, [], stock)

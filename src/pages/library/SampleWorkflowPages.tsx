@@ -64,17 +64,30 @@ import {
 } from "./sample-workflow/store"
 import { mergedClosureRecord } from "./sample-workflow/operations"
 import {
+  AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   MessageCircle,
   Package,
+  Plus,
+  Search,
+  Send,
   Truck,
+  X,
 } from "@/components/ui/icons"
 
 const today = () => new Date().toISOString().slice(0, 10)
 
 const inputClass =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
+// Fixed-width variant for quantity boxes. `inputClass` ends with `w-full`, and Tailwind
+// emits `.w-full` after `.w-20`, so appending `w-20` to inputClass silently loses and the
+// input stretches across the row (overflowing the card and crushing the label text).
+const qtyInputClass =
+  "h-9 w-20 shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-center text-sm tabular-nums text-slate-800 shadow-sm outline-none transition hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+// Compact stat pill used for the per-line quantity breakdown in bag/issue rows.
+const metaPillClass = "rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200"
 const textAreaClass =
   "min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
 const cardClass = "rounded-xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/70 p-4 shadow-[0_2px_10px_rgba(15,23,42,0.045)] ring-1 ring-slate-900/[0.02] sm:p-5"
@@ -82,6 +95,12 @@ const buttonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 const secondaryButtonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+// ArchScale brand (#f45a1e) heading treatment: table headers and label tiles get
+// a light brand band with darker brand text instead of the plain slate bands.
+// Band is tinted (not solid) so small caps stay WCAG-readable; matches the
+// "New Request" button and the shell logo.
+const brandHeadingBand = "border-[#f8d3c1] bg-[#fdece4]"
+const brandHeadingText = "text-[#b1440f]"
 const stageThemes = [
   { active: "border-indigo-600 bg-indigo-600 shadow-indigo-200/60", icon: "text-indigo-500", eyebrow: "text-indigo-700", activeIcon: "text-indigo-100", step: "text-indigo-200" },
   { active: "border-violet-600 bg-violet-600 shadow-violet-200/60", icon: "text-violet-500", eyebrow: "text-violet-700", activeIcon: "text-violet-100", step: "text-violet-200" },
@@ -107,19 +126,47 @@ function Field({
   )
 }
 
+// One colour per workflow status so every badge reads at a glance.
+const STATUS_COLORS: Record<string, string> = {
+  // Request lifecycle (Stage 1)
+  Draft: "bg-slate-100 text-slate-600",
+  Submitted: "bg-blue-50 text-blue-700",
+  Assigned: "bg-violet-50 text-violet-700",
+  "In Preparation": "bg-amber-50 text-amber-700",
+  Closed: "bg-emerald-50 text-emerald-700",
+  // Allocation / issue (Stage 2)
+  "Fully Reserved": "bg-emerald-50 text-emerald-700",
+  "Partially Reserved": "bg-amber-50 text-amber-700",
+  "Pending Stock": "bg-rose-50 text-rose-700",
+  Issued: "bg-sky-50 text-sky-700",
+  // Dispatch / receipt (Stage 3)
+  "Ready for Pickup": "bg-cyan-50 text-cyan-700",
+  "In Transit": "bg-blue-50 text-blue-700",
+  Delivered: "bg-teal-50 text-teal-700",
+  "Receipt Confirmed": "bg-emerald-50 text-emerald-700",
+  Received: "bg-emerald-50 text-emerald-700",
+  Pending: "bg-amber-50 text-amber-700",
+  // Review (Stage 4)
+  "Awaiting Review": "bg-indigo-50 text-indigo-700",
+  "Under Review": "bg-blue-50 text-blue-700",
+  "Decision Recorded": "bg-indigo-50 text-indigo-700",
+  "Revision Required": "bg-amber-50 text-amber-700",
+  Approved: "bg-emerald-50 text-emerald-700",
+  Rejected: "bg-rose-50 text-rose-700",
+  Finalized: "bg-emerald-50 text-emerald-700",
+  // Conditions
+  Damaged: "bg-rose-50 text-rose-700",
+}
+
 function StatusBadge({ children }: { children: React.ReactNode }) {
   const status = String(children ?? "")
-  const color =
-    status === "Closed" || status === "Receipt Confirmed" || status === "Approved" || status === "Fully Reserved"
-      ? "bg-emerald-50 text-emerald-700"
-      : status === "Submitted" || status === "In Transit" || status === "Under Review"
-        ? "bg-blue-50 text-blue-700"
-        : status === "Partially Reserved" || status === "Partial" || status === "Revision Required"
-          ? "bg-amber-50 text-amber-700"
-          : status === "Rejected" || status === "Damaged" || status === "Pending Stock"
-            ? "bg-rose-50 text-rose-700"
-            : "bg-slate-100 text-slate-700"
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${color}`}>{children}</span>
+  const color = STATUS_COLORS[status] ?? "bg-slate-100 text-slate-700"
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${color}`}>
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-current opacity-70" />
+      {children}
+    </span>
+  )
 }
 
 function StageLayout({
@@ -174,9 +221,12 @@ function Feedback({ error, success }: { error: string; success: string }) {
   )
 }
 
-function useSelectedRequest<T extends { id: string }>(requests: T[]) {
+function useSelectedRequest<T extends { id: string }>(
+  requests: T[],
+  preferred?: (request: T) => boolean
+) {
   const [id, setId] = React.useState("")
-  const selected = requests.find((request) => request.id === id) ?? requests[0]
+  const selected = requests.find((request) => request.id === id) ?? requests.find((request) => preferred?.(request)) ?? requests[0]
   return [selected, setId] as const
 }
 
@@ -211,6 +261,114 @@ const itemLine = (item: InventoryItem, quantity: number) => ({
   selectedQuantity: quantity,
 })
 
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "–"
+
+/** Small fabric-style swatch used everywhere a sample is listed. */
+function SampleThumb({
+  name,
+  color,
+  size = "md",
+}: {
+  name: string
+  color?: string
+  size?: "xs" | "sm" | "md"
+}) {
+  const box = size === "xs" ? "size-6 text-[9px]" : size === "sm" ? "size-8 text-[10px]" : "size-10 text-xs"
+  const palette = color?.trim()
+  if (!palette) {
+    return (
+      <span className={`flex ${box} shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-200 font-bold text-slate-500`}>
+        {initialsOf(name)}
+      </span>
+    )
+  }
+  return (
+    <span
+      role="img"
+      aria-label={name}
+      title={name}
+      className={`${box} shrink-0 rounded-lg border border-black/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_1px_2px_rgba(15,23,42,0.12)]`}
+      style={{ backgroundImage: `linear-gradient(135deg, ${palette}, ${palette}cc)` }}
+    />
+  )
+}
+
+const STAT_TONES = {
+  slate: "border-slate-200 bg-slate-50 text-slate-700",
+  sky: "border-sky-200 bg-sky-50 text-sky-700",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  amber: "border-amber-200 bg-amber-50 text-amber-700",
+  violet: "border-violet-200 bg-violet-50 text-violet-700",
+}
+
+function StatTile({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string
+  value: number | string
+  tone: keyof typeof STAT_TONES
+  hint?: string
+}) {
+  return (
+    <div className={`rounded-xl border p-3 ${STAT_TONES[tone]}`}>
+      <p className="text-[10px] font-bold uppercase tracking-wider opacity-75">{label}</p>
+      <p className="mt-0.5 text-xl font-bold leading-6">{value}</p>
+      {hint && <p className="mt-0.5 truncate text-[11px] opacity-70">{hint}</p>}
+    </div>
+  )
+}
+
+function StageTab({
+  label,
+  Icon,
+  active,
+  onClick,
+}: {
+  label: string
+  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition sm:flex-none ${active ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/70" : "text-slate-500 hover:bg-white/60 hover:text-slate-700"}`}
+    >
+      <Icon aria-hidden="true" className={`h-4 w-4 ${active ? "text-indigo-600" : "text-slate-400"}`} />
+      {label}
+    </button>
+  )
+}
+
+function PriorityBadge({ priority }: { priority: RequestPriority }) {
+  const tone =
+    priority === "Urgent"
+      ? "bg-rose-50 text-rose-600 ring-rose-200/70"
+      : priority === "High"
+        ? "bg-amber-50 text-amber-700 ring-amber-200/70"
+        : priority === "Normal"
+          ? "bg-slate-100 text-slate-600 ring-slate-200/70"
+          : "bg-slate-50 text-slate-500 ring-slate-200/70"
+  return (
+    <span className={`mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset ${tone}`}>
+      {priority === "Urgent" && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
+      {priority}
+    </span>
+  )
+}
+
 export function SwatchSamplePage() {
   const document = useWorkflow()
   const inventory = useInventory()
@@ -233,9 +391,30 @@ export function SwatchSamplePage() {
   const [quantities, setQuantities] = React.useState<Record<string, number>>({})
   const [pendingItemId, setPendingItemId] = React.useState("")
   const [pendingQuantity, setPendingQuantity] = React.useState(1)
+  const [formOpen, setFormOpen] = React.useState(false)
+  const [statusFilter, setStatusFilter] = React.useState<RequestStatus | "All">("All")
+  const [query, setQuery] = React.useState("")
+  const [projectFilter, setProjectFilter] = React.useState("all")
+  const [priorityFilter, setPriorityFilter] = React.useState("all")
+  const [sortOrder, setSortOrder] = React.useState<"newest" | "oldest">("newest")
   const [error, setError] = React.useState("")
   const [success, setSuccess] = React.useState("")
   const requests = document.requests.slice().reverse()
+  const statusCounts = (["Draft", "Submitted", "Assigned", "In Preparation", "Closed"] as RequestStatus[]).map(
+    (status) => ({ status, count: requests.filter((request) => request.status === status).length })
+  )
+  const projectOptions = Array.from(new Set(requests.map((request) => request.project))).sort()
+  const listNeedle = query.trim().toLowerCase()
+  const filteredRequests = requests.filter((request) => {
+    if (statusFilter !== "All" && request.status !== statusFilter) return false
+    if (projectFilter !== "all" && request.project !== projectFilter) return false
+    if (priorityFilter !== "all" && request.priority !== priorityFilter) return false
+    if (!listNeedle) return true
+    return `${request.id} ${request.project} ${request.organization} ${request.requester} ${request.sampleDetails}`
+      .toLowerCase()
+      .includes(listNeedle)
+  })
+  const visibleRequests = sortOrder === "newest" ? filteredRequests : filteredRequests.slice().reverse()
   const [selected] = useSelectedRequest(requests)
   const selectedSamples = sampleItems.filter((item) => (quantities[item.id] ?? 0) > 0)
 
@@ -248,6 +427,15 @@ export function SwatchSamplePage() {
 
   const setField = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((current) => ({ ...current, [key]: value }))
+
+  React.useEffect(() => {
+    if (!formOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFormOpen(false)
+    }
+    window.addEventListener("keydown", closeOnEscape)
+    return () => window.removeEventListener("keydown", closeOnEscape)
+  }, [formOpen])
 
   const save = (submit: boolean) => {
     setError("")
@@ -272,6 +460,9 @@ export function SwatchSamplePage() {
     }
     setForm((current) => ({ ...current, project: "", requester: "", organization: "", phone: "", deliveryContact: "", deliveryAddress: "", purpose: "", requiredDate: "" }))
     setQuantities({})
+    setPendingItemId("")
+    setPendingQuantity(1)
+    setFormOpen(false)
   }
 
   const submitExisting = (requestId: string) => {
@@ -286,96 +477,258 @@ export function SwatchSamplePage() {
     <StageLayout stage={1} title="Request registration" subtitle="Create a traceable request using catalogue samples; submit it to place it in the coordinator’s Stage 2 queue.">
       <Feedback error={error} success={success} />
       <section className={cardClass}>
-        <h2 className="text-lg font-semibold text-slate-900">New sample request</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Request source" required><select className={inputClass} value={form.source} onChange={(e) => setField("source", e.target.value as RequestSource)}>{REQUEST_SOURCES.map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Request type"><select className={inputClass} value={form.requestType} onChange={(e) => setField("requestType", e.target.value)}>{REQUEST_TYPES.map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Project / client" required><input className={inputClass} value={form.project} onChange={(e) => setField("project", e.target.value)} /></Field>
-          <Field label="Requester" required><input className={inputClass} value={form.requester} onChange={(e) => setField("requester", e.target.value)} /></Field>
-          <Field label="Organization" required><input className={inputClass} value={form.organization} onChange={(e) => setField("organization", e.target.value)} /></Field>
-          <Field label="Phone" required><input className={inputClass} value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></Field>
-          <Field label="Delivery contact" required><input className={inputClass} value={form.deliveryContact} onChange={(e) => setField("deliveryContact", e.target.value)} /></Field>
-          <Field label="Delivery address" required><input className={inputClass} value={form.deliveryAddress} onChange={(e) => setField("deliveryAddress", e.target.value)} /></Field>
-          <Field label="Required date" required><input type="date" className={inputClass} value={form.requiredDate} onChange={(e) => setField("requiredDate", e.target.value)} /></Field>
-          <Field label="Priority"><select className={inputClass} value={form.priority} onChange={(e) => setField("priority", e.target.value as RequestPriority)}>{REQUEST_PRIORITIES.map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Assigned coordinator" required><input className={inputClass} value={form.assignedCoordinator} onChange={(e) => setField("assignedCoordinator", e.target.value)} /></Field>
-          <Field label="Assignment"><select className={inputClass} value={form.assignment} onChange={(e) => setField("assignment", e.target.value as Assignment)}>{ASSIGNMENTS.map((value) => <option key={value}>{value}</option>)}</select></Field>
-        </div>
-        <Field label="Purpose" required><textarea className={`${textAreaClass} mt-1.5`} value={form.purpose} onChange={(e) => setField("purpose", e.target.value)} /></Field>
-        <div className="mt-5">
-          <h3 className="text-sm font-semibold text-slate-800">Sample selection <span className="text-rose-600">*</span></h3>
-          <p className="mb-3 mt-1 text-xs text-slate-500">Pick a catalogue item from the dropdown and set its requested quantity.</p>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-[16rem] flex-1 space-y-1 text-xs font-semibold text-slate-700">
-              <span>Catalogue sample</span>
-              <select
-                className={inputClass}
-                aria-label="Catalogue sample"
-                value={pendingItemId}
-                onChange={(e) => setPendingItemId(e.target.value)}
-              >
-                <option value="">Select a sample…</option>
-                {sampleItems.map((item) => (
-                  <option key={item.id} value={item.id} disabled={(quantities[item.id] ?? 0) > 0}>
-                    {item.name} · {item.code} · {item.category} (Stock {item.stock})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="w-28 space-y-1 text-xs font-semibold text-slate-700">
-              <span>Quantity</span>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                aria-label="Requested quantity"
-                className={inputClass}
-                value={pendingQuantity}
-                onChange={(e) => setPendingQuantity(Math.max(1, Number(e.target.value) || 1))}
-              />
-            </label>
-            <button type="button" className={secondaryButtonClass} disabled={!pendingItemId} onClick={addSample}>
-              Add sample
-            </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {[{ label: "All", value: "All" as const, count: requests.length }, ...statusCounts.map((entry) => ({ label: entry.status, value: entry.status as RequestStatus | "All", count: entry.count }))].map((pill) => {
+              const active = statusFilter === pill.value
+              return (
+                <button
+                  key={pill.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setStatusFilter(pill.value)}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${active ? "border-slate-900 bg-slate-900 text-white shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}
+                >
+                  {pill.label}
+                  <span className={`rounded-full px-1.5 py-px text-[11px] font-bold ${active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>{pill.count}</span>
+                </button>
+              )
+            })}
           </div>
-          {selectedSamples.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {selectedSamples.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 py-1 pl-3 pr-1.5 text-xs font-semibold text-indigo-800">
-                  <span className="max-w-[14rem] truncate">{item.name} <span className="font-normal text-indigo-500">· {item.code}</span></span>
-                  <input
-                    aria-label={`${item.name} requested quantity`}
-                    type="number"
-                    min={1}
-                    step={1}
-                    className="h-6 w-14 rounded-full border border-indigo-200 bg-white px-1.5 text-center text-xs font-semibold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                    value={quantities[item.id]}
-                    onChange={(e) => setQuantities((current) => ({ ...current, [item.id]: Math.max(1, Number(e.target.value) || 1) }))}
-                  />
-                  <button
-                    type="button"
-                    aria-label={`Remove ${item.name}`}
-                    className="flex size-5 items-center justify-center rounded-full text-indigo-400 transition hover:bg-indigo-100 hover:text-indigo-700"
-                    onClick={() => setQuantities((current) => ({ ...current, [item.id]: 0 }))}
-                  >
-                    ×
-                  </button>
+          <button
+            type="button"
+            onClick={() => setFormOpen(true)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#f45a1e] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#dc4c15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:ring-offset-2"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            New Request
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/90 bg-white p-2.5">
+          <div className="relative min-w-[13rem] flex-1 sm:max-w-xs">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              aria-label="Search requests"
+              placeholder="Search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+          <label className="relative">
+            <span className="sr-only">Project</span>
+            <select
+              aria-label="Filter by project"
+              className="h-9 max-w-[14rem] appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-8 text-sm font-medium text-slate-700 outline-none transition hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+            >
+              <option value="all">All projects</option>
+              {projectOptions.map((project) => <option key={project} value={project}>{project}</option>)}
+            </select>
+            <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          </label>
+          <label className="relative">
+            <span className="sr-only">Priority</span>
+            <select
+              aria-label="Filter by priority"
+              className="h-9 appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-8 text-sm font-medium text-slate-700 outline-none transition hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value)}
+            >
+              <option value="all">All priorities</option>
+              {REQUEST_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+            </select>
+            <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          </label>
+          <label className="relative">
+            <span className="sr-only">Sort order</span>
+            <select
+              aria-label="Sort requests"
+              className="h-9 appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-8 text-sm font-medium text-slate-700 outline-none transition hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value as "newest" | "oldest")}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          </label>
+          <span className="ml-auto px-2 text-xs font-medium text-slate-400">{visibleRequests.length} of {requests.length}</span>
+        </div>
+
+        {visibleRequests.length ? (
+          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200/90 bg-white">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead>
+                <tr className={`border-b ${brandHeadingBand} ${brandHeadingText} text-[11px] font-bold uppercase tracking-wider`}>
+                  <th className="px-4 py-3">Request</th>
+                  <th className="px-4 py-3">Project</th>
+                  <th className="px-4 py-3">Items</th>
+                  <th className="px-4 py-3">Requester</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRequests.map((request) => (
+                  <tr key={request.id} className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/70">
+                    <td className="px-4 py-3.5 align-top">
+                      <p className="text-sm font-bold text-slate-900">{request.id}</p>
+                      <PriorityBadge priority={request.priority} />
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <p className="max-w-[13rem] truncate text-sm font-semibold text-slate-800">{request.project}</p>
+                      <p className="mt-0.5 max-w-[13rem] truncate text-xs text-slate-500">{request.organization}</p>
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex shrink-0 -space-x-1.5 pt-0.5">
+                          {request.lines.slice(0, 3).map((line) => <SampleThumb key={line.itemId} name={line.name} color={inventory.find((item) => item.id === line.itemId)?.color} size="sm" />)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-slate-800">{request.sampleDetails}</p>
+                          {request.purpose && <p className="mt-0.5 truncate text-xs text-slate-500">{request.purpose}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="flex items-center gap-2.5">
+                        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">{initialsOf(request.requester)}</span>
+                        <span className="text-sm font-medium text-slate-700">{request.requester}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 align-top"><StatusBadge>{request.status}</StatusBadge></td>
+                    <td className="px-4 py-3.5 text-right align-top">
+                      {request.status === "Draft" ? (
+                        <button
+                          type="button"
+                          className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                          onClick={() => submitExisting(request.id)}
+                        >
+                          Submit
+                        </button>
+                      ) : (
+                        <span className="text-slate-300" aria-hidden="true">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
+            {requests.length ? "No requests match the current filters." : "No sample requests yet. Select “New request” to register the first one."}
+          </p>
+        )}
+      </section>
+      {formOpen && (
+        <div className="fixed inset-0 z-50 flex animate-fade-in justify-end bg-slate-900/35 backdrop-blur-[2px] motion-reduce:animate-none" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="new-request-title" className="flex h-full w-full max-w-3xl animate-panel-slide-in flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl motion-reduce:animate-none">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-600">Sample Management <span className="px-1 text-slate-300">/</span> Stage 1</p>
+                <h2 id="new-request-title" className="mt-1 text-lg font-semibold text-slate-900">New sample request</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Fill in the details, pick samples, then save a draft or submit.</p>
+              </div>
+              <button type="button" aria-label="Close new request" onClick={() => setFormOpen(false)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-800">
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </header>
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label="Request source" required><select className={inputClass} value={form.source} onChange={(e) => setField("source", e.target.value as RequestSource)}>{REQUEST_SOURCES.map((value) => <option key={value}>{value}</option>)}</select></Field>
+                  <Field label="Request type"><select className={inputClass} value={form.requestType} onChange={(e) => setField("requestType", e.target.value)}>{REQUEST_TYPES.map((value) => <option key={value}>{value}</option>)}</select></Field>
+                  <Field label="Project / client" required><input className={inputClass} value={form.project} onChange={(e) => setField("project", e.target.value)} /></Field>
+                  <Field label="Requester" required><input className={inputClass} value={form.requester} onChange={(e) => setField("requester", e.target.value)} /></Field>
+                  <Field label="Organization" required><input className={inputClass} value={form.organization} onChange={(e) => setField("organization", e.target.value)} /></Field>
+                  <Field label="Phone" required><input className={inputClass} value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></Field>
+                  <Field label="Delivery contact" required><input className={inputClass} value={form.deliveryContact} onChange={(e) => setField("deliveryContact", e.target.value)} /></Field>
+                  <Field label="Delivery address" required><input className={inputClass} value={form.deliveryAddress} onChange={(e) => setField("deliveryAddress", e.target.value)} /></Field>
+                  <Field label="Required date" required><input type="date" className={inputClass} value={form.requiredDate} onChange={(e) => setField("requiredDate", e.target.value)} /></Field>
+                  <Field label="Priority"><select className={inputClass} value={form.priority} onChange={(e) => setField("priority", e.target.value as RequestPriority)}>{REQUEST_PRIORITIES.map((value) => <option key={value}>{value}</option>)}</select></Field>
+                  <Field label="Assigned coordinator" required><input className={inputClass} value={form.assignedCoordinator} onChange={(e) => setField("assignedCoordinator", e.target.value)} /></Field>
+                  <Field label="Assignment"><select className={inputClass} value={form.assignment} onChange={(e) => setField("assignment", e.target.value as Assignment)}>{ASSIGNMENTS.map((value) => <option key={value}>{value}</option>)}</select></Field>
                 </div>
-              ))}
+                <Field label="Purpose" required><textarea className={`${textAreaClass} mt-1.5`} value={form.purpose} onChange={(e) => setField("purpose", e.target.value)} /></Field>
+                <div className="mt-5">
+                  <h3 className="text-sm font-semibold text-slate-800">Sample selection <span className="text-rose-600">*</span></h3>
+                  <p className="mb-3 mt-1 text-xs text-slate-500">Pick a catalogue item from the dropdown and set its requested quantity.</p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="min-w-[16rem] flex-1 space-y-1 text-xs font-semibold text-slate-700">
+                      <span>Catalogue sample</span>
+                      <select
+                        className={inputClass}
+                        aria-label="Catalogue sample"
+                        value={pendingItemId}
+                        onChange={(e) => setPendingItemId(e.target.value)}
+                      >
+                        <option value="">Select a sample…</option>
+                        {sampleItems.map((item) => (
+                          <option key={item.id} value={item.id} disabled={(quantities[item.id] ?? 0) > 0}>
+                            {item.name} · {item.code} · {item.category} (Stock {item.stock})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="w-28 space-y-1 text-xs font-semibold text-slate-700">
+                      <span>Quantity</span>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        aria-label="Requested quantity"
+                        className={inputClass}
+                        value={pendingQuantity}
+                        onChange={(e) => setPendingQuantity(Math.max(1, Number(e.target.value) || 1))}
+                      />
+                    </label>
+                    <button type="button" className={secondaryButtonClass} disabled={!pendingItemId} onClick={addSample}>
+                      Add sample
+                    </button>
+                  </div>
+                  {selectedSamples.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedSamples.map((item) => (
+                        <div key={item.id} className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 py-1 pl-1.5 pr-1.5 text-xs font-semibold text-indigo-800">
+                          <SampleThumb name={item.name} color={item.color} size="xs" />
+                          <span className="max-w-[14rem] truncate">{item.name} <span className="font-normal text-indigo-500">· {item.code}</span></span>
+                          <input
+                            aria-label={`${item.name} requested quantity`}
+                            type="number"
+                            min={1}
+                            step={1}
+                            className="h-6 w-14 rounded-full border border-indigo-200 bg-white px-1.5 text-center text-xs font-semibold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                            value={quantities[item.id]}
+                            onChange={(e) => setQuantities((current) => ({ ...current, [item.id]: Math.max(1, Number(e.target.value) || 1) }))}
+                          />
+                          <button
+                            type="button"
+                            aria-label={`Remove ${item.name}`}
+                            className="flex size-5 items-center justify-center rounded-full text-indigo-400 transition hover:bg-indigo-100 hover:text-indigo-700"
+                            onClick={() => setQuantities((current) => ({ ...current, [item.id]: 0 }))}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500">No samples selected yet.</p>
+                  )}
+                </div>
             </div>
-          ) : (
-            <p className="mt-3 text-xs text-slate-500">No samples selected yet.</p>
-          )}
+            <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <button type="button" className={secondaryButtonClass} onClick={() => setFormOpen(false)}>Cancel</button>
+              <button type="button" className={secondaryButtonClass} onClick={() => save(false)}>Save draft</button>
+              <button type="button" className={buttonClass} onClick={() => save(true)}>Submit request</button>
+            </footer>
+          </section>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button type="button" className={secondaryButtonClass} onClick={() => save(false)}>Save draft</button>
-          <button type="button" className={buttonClass} onClick={() => save(true)}>Submit request</button>
-        </div>
-      </section>
-      <section className={cardClass}>
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-900">Sample requests</h2><span className="text-sm text-slate-500">{requests.length} total</span></div>
-        {requests.length ? <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-slate-50"><tr className="border-b text-[10px] font-semibold uppercase tracking-wider text-slate-500"><th className="px-3 py-2.5">Request</th><th className="px-3 py-2.5">Project</th><th className="px-3 py-2.5">Requester</th><th className="px-3 py-2.5">Samples</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5">Action</th></tr></thead><tbody>{requests.map((request) => <tr key={request.id} className="border-b text-slate-700 transition-colors last:border-0 hover:bg-slate-50/70"><td className="px-3 py-3 font-semibold text-slate-900">{request.id}</td><td className="px-3 py-3">{request.project}</td><td className="px-3 py-3">{request.requester}</td><td className="px-3 py-3">{request.sampleDetails}</td><td className="px-3 py-3"><StatusBadge>{request.status}</StatusBadge></td><td className="px-3 py-3">{request.status === "Draft" && <button className="text-sm font-semibold text-indigo-700 hover:text-indigo-900" onClick={() => submitExisting(request.id)}>Submit</button>}</td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-500">No sample requests yet.</p>}
-      </section>
+      )}
       {selected && <p className="sr-only">Selected request {selected.id}</p>}
     </StageLayout>
   )
@@ -387,6 +740,7 @@ export function SelectIssuePage() {
   const allocation = useAllocation()
   const requests = document.requests.filter((request) => request.status !== "Draft" && request.status !== "Closed")
   const [request, setRequestId] = useSelectedRequest(requests)
+  const [activeTab, setActiveTab] = React.useState<"overview" | "bag" | "issue">("overview")
   const [bagName, setBagName] = React.useState("Sample bag")
   const [bagQuantities, setBagQuantities] = React.useState<Record<string, number>>({})
   const [issueQuantities, setIssueQuantities] = React.useState<Record<string, Record<string, number>>>({})
@@ -412,7 +766,7 @@ export function SelectIssuePage() {
     if (result.error) return setError(result.error)
     const persistError = commitWorkflow(result.document)
     if (persistError) setError(persistError)
-    else { setBagQuantities({}); setSuccess("Sample bag added.") }
+    else { setBagQuantities({}); setSuccess("Sample bag added."); setActiveTab("issue") }
   }
   const issueBag = (bagId: string) => {
     if (!request) return
@@ -444,6 +798,23 @@ export function SelectIssuePage() {
     else setSuccess("Issue recorded and available stock deducted.")
   }
 
+  const colorOf = (itemId: string) => inventory.find((item) => item.id === itemId)?.color
+  const totals = lines.reduce(
+    (sum, line) => {
+      const row = allocation[request?.id ?? ""]?.lines[line.itemId]
+      return {
+        requested: sum.requested + (row?.requested ?? line.quantity),
+        available: sum.available + (row?.available ?? 0),
+        reserved: sum.reserved + (row?.reserved ?? 0),
+        pending: sum.pending + (row?.pending ?? 0),
+        issued: sum.issued + (row?.issued ?? 0),
+      }
+    },
+    { requested: 0, available: 0, reserved: 0, pending: 0, issued: 0 }
+  )
+  const canStage = Boolean(request && request.status !== "Submitted" && request.status !== "Closed")
+  const tab = canStage ? activeTab : "overview"
+
   return (
     <StageLayout stage={2} title="Select, reserve & issue" subtitle="Stage 1 demand is the source of truth. FIFO allocation reserves available stock; only reserved units can be issued.">
       <Feedback error={error} success={success} />
@@ -455,40 +826,183 @@ export function SelectIssuePage() {
         {!request ? <p className="mt-4 text-sm text-slate-500">Submitted requests will appear here for coordinator acceptance.</p> : (
           <>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Project</p><p className="mt-1 font-semibold">{request.project}</p></div>
-              <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Requester</p><p className="mt-1 font-semibold">{request.requester}</p></div>
-              <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Request ID</p><p className="mt-1 font-semibold">{request.id}</p></div>
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Project</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{request.project}</p>
+              </div>
+              <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-violet-500">Requester</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{request.requester}</p>
+              </div>
+              <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-sky-500">Request ID</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{request.id}</p>
+              </div>
             </div>
             {request.status === "Submitted" && <button className={`${buttonClass} mt-4`} onClick={() => { const result = acceptRequest(document, request.id); if (result.error) { setError(result.error) } else { const err = commitWorkflow(result.document); if (err) setError(err); else setSuccess("Request accepted for allocation.") } }}>Accept request</button>}
-            <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-50"><tr className="border-b text-[10px] font-semibold uppercase tracking-wider text-slate-500"><th className="px-3 py-2.5">Sample</th><th className="px-3 py-2.5">Requested</th><th className="px-3 py-2.5">Available</th><th className="px-3 py-2.5">Reserved</th><th className="px-3 py-2.5">Pending</th><th className="px-3 py-2.5">Issued</th><th className="px-3 py-2.5">Status</th></tr></thead><tbody>{lines.map((line) => { const row = allocation[request.id]?.lines[line.itemId]; const status = !row?.reserved && row?.pending ? "Pending Stock" : row?.pending ? "Partially Reserved" : row?.remaining === 0 ? "Issued" : "Fully Reserved"; return <tr key={line.itemId} className="border-b text-slate-700 transition-colors last:border-0 hover:bg-slate-50/70"><td className="px-3 py-3"><p className="font-semibold text-slate-900">{line.name}</p><p className="text-xs text-slate-500">{line.code} · {line.itemId}</p></td><td className="px-3 py-3">{row?.requested ?? line.quantity}</td><td className="px-3 py-3">{row?.available ?? 0}</td><td className="px-3 py-3">{row?.reserved ?? 0}/{row?.requested ?? line.quantity}</td><td className="px-3 py-3">{row?.pending ?? line.quantity}</td><td className="px-3 py-3">{row?.issued ?? 0}</td><td className="px-3 py-3"><StatusBadge>{status}</StatusBadge></td></tr> })}</tbody></table></div>
-            {request.status !== "Submitted" && request.status !== "Closed" && <>
-              <div className="mt-6 border-t border-slate-100 pt-5">
-                <h3 className="font-semibold text-slate-900">Build sample bag</h3>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_2fr]">
-                  <Field label="Bag name"><input className={inputClass} value={bagName} onChange={(e) => setBagName(e.target.value)} /></Field>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {lines.map((line) => { const row = allocation[request.id]?.lines[line.itemId]; const remainingToBag = Math.max(0, (row?.reserved ?? 0) - stagedUnissued(line.itemId)); return <Field key={line.itemId} label={`${line.name} · reserved to bag ${remainingToBag}`}><input className={inputClass} type="number" min={0} max={remainingToBag} value={bagQuantities[line.itemId] ?? 0} onChange={(e) => setBagQuantities((current) => ({ ...current, [line.itemId]: Math.min(remainingToBag, Math.max(0, Number(e.target.value) || 0)) }))} /></Field> })}
+            <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <StatTile label="Requested" value={totals.requested} tone="slate" hint={`${lines.length} sample${lines.length === 1 ? "" : "s"}`} />
+              <StatTile label="Available" value={totals.available} tone="sky" />
+              <StatTile label="Reserved" value={totals.reserved} tone="emerald" />
+              <StatTile label="Pending" value={totals.pending} tone="amber" hint={totals.pending ? "short on stock" : "fully covered"} />
+              <StatTile label="Issued" value={totals.issued} tone="violet" />
+            </div>
+
+            <div role="tablist" aria-label="Stage 2 sections" className="mt-5 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+              <StageTab label="Request overview" Icon={ClipboardList} active={tab === "overview"} onClick={() => setActiveTab("overview")} />
+              {canStage && <StageTab label="Build sample bag" Icon={Package} active={tab === "bag"} onClick={() => setActiveTab("bag")} />}
+              {canStage && <StageTab label="Issue details" Icon={Send} active={tab === "issue"} onClick={() => setActiveTab("issue")} />}
+            </div>
+
+            {tab === "overview" && (
+              <div className="mt-4">
+                {lines.length ? (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full min-w-[720px] text-left text-sm">
+                      <thead className="bg-[#fdece4]">
+                        <tr className={`border-b border-[#f8d3c1] ${brandHeadingText} text-[10px] font-semibold uppercase tracking-wider`}>
+                          <th className="px-3 py-2.5">Sample</th>
+                          <th className="px-3 py-2.5">Requested</th>
+                          <th className="px-3 py-2.5">Available</th>
+                          <th className="px-3 py-2.5">Reserved</th>
+                          <th className="px-3 py-2.5">Pending</th>
+                          <th className="px-3 py-2.5">Issued</th>
+                          <th className="px-3 py-2.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((line) => {
+                          const row = allocation[request.id]?.lines[line.itemId]
+                          const status = !row?.reserved && row?.pending ? "Pending Stock" : row?.pending ? "Partially Reserved" : row?.remaining === 0 ? "Issued" : "Fully Reserved"
+                          return (
+                            <tr key={line.itemId} className="border-b text-slate-700 transition-colors last:border-0 hover:bg-slate-50/70">
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-3">
+                                  <SampleThumb name={line.name} color={colorOf(line.itemId)} />
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-900">{line.name}</p>
+                                    <p className="text-xs text-slate-500">{line.code} · {line.itemId}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3">{row?.requested ?? line.quantity}</td>
+                              <td className="px-3 py-3">{row?.available ?? 0}</td>
+                              <td className="px-3 py-3">{row?.reserved ?? 0}/{row?.requested ?? line.quantity}</td>
+                              <td className="px-3 py-3">{row?.pending ?? line.quantity}</td>
+                              <td className="px-3 py-3">{row?.issued ?? 0}</td>
+                              <td className="px-3 py-3"><StatusBadge>{status}</StatusBadge></td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-                <button className={`${secondaryButtonClass} mt-3`} onClick={addBagNow}>Add to sample bag</button>
+                ) : (
+                  <p className="text-sm text-slate-500">This request has no sample lines.</p>
+                )}
               </div>
-              <div className="mt-6 border-t border-slate-100 pt-5">
-                <h3 className="font-semibold text-slate-900">Issue details</h3>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Field label="Issued by" required><input className={inputClass} value={issuedBy} onChange={(e) => setIssuedBy(e.target.value)} /></Field>
-                  <Field label="Issued to" required><input className={inputClass} value={issuedTo} onChange={(e) => setIssuedTo(e.target.value)} /></Field>
-                  <Field label="Condition at issue"><select className={inputClass} value={condition} onChange={(e) => setCondition(e.target.value as SampleCondition)}>{SAMPLE_CONDITIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
-                  <Field label="Return by date"><input type="date" className={inputClass} value={returnByDate} onChange={(e) => setReturnByDate(e.target.value)} /></Field>
+            )}
+            {tab === "bag" && canStage && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="min-w-[14rem] flex-1">
+                    <Field label="Bag name"><input className={inputClass} value={bagName} onChange={(e) => setBagName(e.target.value)} /></Field>
+                  </div>
+                  <button type="button" className={secondaryButtonClass} onClick={addBagNow}>Add to sample bag</button>
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {bags.map((bag) => {
-                    const issueTotalByLine = new Map(document.issues.filter((issue) => issue.bagId === bag.id).flatMap((issue) => issue.lines).map((line) => [line.bagLineId, (document.issues.filter((issue) => issue.bagId === bag.id).flatMap((issue) => issue.lines).filter((issuedLine) => issuedLine.bagLineId === line.bagLineId).reduce((sum, issuedLine) => sum + issuedLine.quantity, 0))]))
-                    return <div key={bag.id} className="rounded-lg border border-slate-200 p-4"><div className="flex justify-between gap-2"><h4 className="font-semibold">{bag.name}</h4><span className="text-xs text-slate-500">{bag.id}</span></div><div className="mt-3 space-y-3">{bag.lines.map((line) => { const row = allocation[request.id]?.lines[line.itemId]; const issued = issueTotalByLine.get(line.id) ?? 0; const max = Math.min(line.quantity - issued, row?.reserved ?? 0); return <Field key={line.id} label={`${line.name} · bagged ${line.quantity}, issued ${issued}, reserved ${row?.reserved ?? 0}`}><input type="number" min={0} max={max} className={inputClass} value={issueQuantities[bag.id]?.[line.id] ?? max} onChange={(e) => setIssueQuantities((current) => ({ ...current, [bag.id]: { ...current[bag.id], [line.id]: Math.min(max, Math.max(0, Number(e.target.value) || 0)) } }))} /></Field> })}</div><button className={`${buttonClass} mt-4`} disabled={bag.lines.every((line) => !(issueQuantities[bag.id]?.[line.id] ?? Math.min(line.quantity, allocation[request.id]?.lines[line.itemId]?.reserved ?? 0)))} onClick={() => issueBag(bag.id)}>Record issue</button></div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {lines.map((line) => {
+                    const row = allocation[request.id]?.lines[line.itemId]
+                    const remainingToBag = Math.max(0, (row?.reserved ?? 0) - stagedUnissued(line.itemId))
+                    return (
+                      <div key={line.itemId} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 transition hover:border-indigo-200 hover:bg-indigo-50/40">
+                        <SampleThumb name={line.name} color={colorOf(line.itemId)} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-900">{line.name}</p>
+                          <p className="text-xs text-slate-500">Reserved {row?.reserved ?? 0} · free to bag {remainingToBag} of {line.quantity}</p>
+                        </div>
+                        <input
+                          aria-label={`Bag quantity for ${line.name}`}
+                          className={qtyInputClass}
+                          type="number"
+                          min={0}
+                          max={remainingToBag}
+                          value={bagQuantities[line.itemId] ?? 0}
+                          onChange={(e) => setBagQuantities((current) => ({ ...current, [line.itemId]: Math.min(remainingToBag, Math.max(0, Number(e.target.value) || 0)) }))}
+                        />
+                      </div>
+                    )
                   })}
                 </div>
-                {!bags.length && <p className="mt-3 text-sm text-slate-500">Reserve stock, then add one or more sample bags to prepare an issue.</p>}
+                {!lines.length && <p className="mt-3 text-sm text-slate-500">This request has no sample lines.</p>}
               </div>
-            </>}
+            )}
+
+            {tab === "issue" && canStage && (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold text-slate-900">Issue details</h3>
+                  <p className="mt-0.5 text-xs text-slate-500">Who takes the samples, their condition now, and when they come back.</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                    <Field label="Issued by" required><input className={inputClass} value={issuedBy} onChange={(e) => setIssuedBy(e.target.value)} /></Field>
+                    <Field label="Issued to" required><input className={inputClass} value={issuedTo} onChange={(e) => setIssuedTo(e.target.value)} /></Field>
+                    <Field label="Condition at issue"><select className={inputClass} value={condition} onChange={(e) => setCondition(e.target.value as SampleCondition)}>{SAMPLE_CONDITIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
+                    <Field label="Return by date"><input type="date" className={inputClass} value={returnByDate} onChange={(e) => setReturnByDate(e.target.value)} /></Field>
+                  </div>
+                </div>
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {bags.map((bag) => {
+                    const issueTotalByLine = new Map(document.issues.filter((issue) => issue.bagId === bag.id).flatMap((issue) => issue.lines).map((line) => [line.bagLineId, (document.issues.filter((issue) => issue.bagId === bag.id).flatMap((issue) => issue.lines).filter((issuedLine) => issuedLine.bagLineId === line.bagLineId).reduce((sum, issuedLine) => sum + issuedLine.quantity, 0))]))
+                    return (
+                      <div key={bag.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                          <h4 className="font-semibold text-slate-900">{bag.name}</h4>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{bag.id}</span>
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          {bag.lines.map((line) => {
+                            const row = allocation[request.id]?.lines[line.itemId]
+                            const issued = issueTotalByLine.get(line.id) ?? 0
+                            const max = Math.min(line.quantity - issued, row?.reserved ?? 0)
+                            return (
+                              <div key={line.id} className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/80 p-2.5">
+                                <SampleThumb name={line.name} color={colorOf(line.itemId)} size="sm" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-semibold text-slate-900">{line.name}</p>
+                                  <div className="mt-1 flex flex-wrap gap-1.5">
+                                    <span className={metaPillClass}>Bagged {line.quantity}</span>
+                                    <span className={metaPillClass}>Issued {issued}</span>
+                                    <span className={metaPillClass}>Reserved {row?.reserved ?? 0}</span>
+                                  </div>
+                                </div>
+                                <input
+                                  aria-label={`Issue quantity for ${line.name}`}
+                                  type="number"
+                                  min={0}
+                                  max={max}
+                                  className={qtyInputClass}
+                                  value={issueQuantities[bag.id]?.[line.id] ?? max}
+                                  onChange={(e) => setIssueQuantities((current) => ({ ...current, [bag.id]: { ...current[bag.id], [line.id]: Math.min(max, Math.max(0, Number(e.target.value) || 0)) } }))}
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          className={`${buttonClass} mt-4`}
+                          disabled={bag.lines.every((line) => !(issueQuantities[bag.id]?.[line.id] ?? Math.min(line.quantity, allocation[request.id]?.lines[line.itemId]?.reserved ?? 0)))}
+                          onClick={() => issueBag(bag.id)}
+                        >
+                          Record issue
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+                {!bags.length && <p className="text-sm text-slate-500">Reserve stock, then add one or more sample bags to prepare an issue.</p>}
+              </div>
+            )}
           </>
         )}
       </section>
@@ -498,14 +1012,22 @@ export function SelectIssuePage() {
 
 export function DeliveryReceiptPage() {
   const document = useWorkflow()
+  const inventory = useInventory()
+  const colorOf = (itemId: string) => inventory.find((item) => item.id === itemId)?.color
   const requests = document.requests.filter((request) => request.status !== "Draft")
-  const [request, setRequestId] = useSelectedRequest(requests)
+  const [request, setRequestId] = useSelectedRequest(
+    requests,
+    (candidate) => document.issues.some(
+      (issue) => issue.requestId === candidate.id && !document.dispatches.some((dispatch) => dispatch.issueId === issue.id)
+    )
+  )
   const issues = document.issues.filter((issue) => issue.requestId === request?.id)
+  const availableIssues = issues.filter((issue) => !document.dispatches.some((dispatch) => dispatch.issueId === issue.id))
   const [issueId, setIssueId] = React.useState("")
-  const selectedIssue = issues.find((issue) => issue.id === issueId) ?? issues[0]
+  const selectedIssue = availableIssues.find((issue) => issue.id === issueId) ?? availableIssues[0]
   const dispatches = document.dispatches.filter((dispatch) => dispatch.requestId === request?.id)
   const [dispatchId, setDispatchId] = React.useState("")
-  const selectedDispatch = dispatches.find((dispatch) => dispatch.id === dispatchId) ?? dispatches.find((dispatch) => dispatch.status !== "Receipt Confirmed")
+  const selectedDispatch = dispatches.find((dispatch) => dispatch.id === dispatchId) ?? dispatches.find((dispatch) => dispatch.status !== "Receipt Confirmed") ?? dispatches[0]
   const [dispatchForm, setDispatchForm] = React.useState({
     method: "Courier" as DeliveryMethod, pickupLocation: "Studio" as PickupLocation,
     destination: "Site-Client" as DeliveryDestination, deliveryAddress: "", contactPerson: "",
@@ -516,10 +1038,30 @@ export function DeliveryReceiptPage() {
   const [damaged, setDamaged] = React.useState<Record<string, number>>({})
   const [discrepancyNotes, setDiscrepancyNotes] = React.useState<Record<string, string>>({})
   const [receiver, setReceiver] = React.useState("")
+  const [proofOfDelivery, setProofOfDelivery] = React.useState("")
   const [condition, setCondition] = React.useState<SampleCondition>("Good")
   const [receiptNotes, setReceiptNotes] = React.useState("")
   const [error, setError] = React.useState("")
   const [success, setSuccess] = React.useState("")
+
+  const clearReceiptForm = () => {
+    setReceived({})
+    setDamaged({})
+    setDiscrepancyNotes({})
+    setReceiver("")
+    setProofOfDelivery("")
+    setReceiptNotes("")
+    setCondition("Good")
+  }
+  const changeRequest = (id: string) => {
+    setError("")
+    setSuccess("")
+    setRequestId(id)
+    setIssueId("")
+    setDispatchId("")
+    setDispatchForm((current) => ({ ...current, deliveryAddress: "", contactPerson: "", contactNumber: "", expectedDeliveryDate: "", dispatchedBy: "", courierName: "", trackingNumber: "", awbNumber: "" }))
+    clearReceiptForm()
+  }
 
   const saveDispatch = () => {
     setError("")
@@ -536,7 +1078,26 @@ export function DeliveryReceiptPage() {
     })
     if (result.error) return setError(result.error)
     const persistError = commitWorkflow(result.document)
-    if (persistError) setError(persistError); else setSuccess("Dispatch created.")
+    if (persistError) setError(persistError)
+    else {
+      setIssueId("")
+      setDispatchId(result.document.dispatches[result.document.dispatches.length - 1]?.id ?? "")
+      clearReceiptForm()
+      setSuccess("Dispatch created. Advance its status as it moves through delivery.")
+    }
+  }
+  const advanceDispatch = (dispatchId: string, status: (typeof DISPATCH_STATUSES)[number]) => {
+    setError("")
+    setSuccess("")
+    if (selectedDispatch?.id !== dispatchId) {
+      setDispatchId(dispatchId)
+      clearReceiptForm()
+    }
+    const result = updateDispatchStatus(document, dispatchId, status, "Coordinator")
+    if (result.error) return setError(result.error)
+    const persistError = commitWorkflow(result.document)
+    if (persistError) setError(persistError)
+    else setSuccess(`Dispatch advanced to ${status}.`)
   }
   const saveReceipt = () => {
     setError("")
@@ -545,46 +1106,156 @@ export function DeliveryReceiptPage() {
     const issue = document.issues.find((entry) => entry.id === selectedDispatch.issueId)
     if (!issue) return setError("The issue linked to this dispatch could not be found.")
     const prior = document.receipts.filter((entry) => entry.dispatchId === selectedDispatch.id).flatMap((entry) => entry.lines)
-    const lines = issue.lines.map((line) => {
+    const lines = issue.lines.flatMap((line) => {
       const already = prior.filter((entry) => entry.itemId === line.itemId).reduce((sum, entry) => sum + entry.receivedQuantity, 0)
       const remaining = Math.max(0, line.quantity - already)
-      return { itemId: line.itemId, receivedQuantity: received[line.itemId] ?? remaining, damagedQuantity: damaged[line.itemId] ?? 0, discrepancyNotes: discrepancyNotes[line.itemId] ?? "" }
-    }).filter((line) => line.receivedQuantity > 0 || (received[line.itemId] ?? 0) === 0)
-    const result = confirmReceipt(document, { dispatchId: selectedDispatch.id, receivedDate: today(), receiver, custodyHolder: receiver, conditionAtReceipt: condition, proofOfDelivery: "", notes: receiptNotes, lines })
+      return remaining > 0
+        ? [{ itemId: line.itemId, receivedQuantity: received[line.itemId] ?? remaining, damagedQuantity: damaged[line.itemId] ?? 0, discrepancyNotes: discrepancyNotes[line.itemId] ?? "" }]
+        : []
+    })
+    const result = confirmReceipt(document, { dispatchId: selectedDispatch.id, receivedDate: today(), receiver, custodyHolder: receiver, conditionAtReceipt: condition, proofOfDelivery, notes: receiptNotes, lines })
     if (result.error) return setError(result.error)
     const persistError = commitWorkflow(result.document)
-    if (persistError) setError(persistError); else { setReceived({}); setDamaged({}); setDiscrepancyNotes({}); setReceiptNotes(""); setSuccess("Receipt confirmed and confirmed quantities sent to Stage 4.") }
+    if (persistError) setError(persistError)
+    else {
+      clearReceiptForm()
+      setSuccess("Receipt confirmed and confirmed quantities sent to Stage 4.")
+    }
   }
 
   return (
     <StageLayout stage={3} title="Dispatch, delivery & receipt" subtitle="Create dispatches from actual Stage 2 issues, then confirm receipt quantities against each issued line.">
       <Feedback error={error} success={success} />
       <section className={cardClass}>
-        <RequestSelect requests={requests} selectedId={request?.id} onChange={setRequestId} />
-        {request && <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm"><span className="font-semibold">{request.id}</span> · {request.project} · {request.requester}</div>}
+        <RequestSelect requests={requests} selectedId={request?.id} onChange={changeRequest} />
+        {request && <div className={`mt-4 rounded-lg p-3 text-sm ${brandHeadingBand}`}><span className={`font-semibold ${brandHeadingText}`}>{request.id}</span> · {request.project} · {request.requester}</div>}
       </section>
       <section className={cardClass}>
-        <h2 className="text-lg font-semibold">Create dispatch</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Issued record" required><select className={inputClass} value={selectedIssue?.id ?? ""} onChange={(e) => setIssueId(e.target.value)}><option value="">Select an issue</option>{issues.map((issue) => <option key={issue.id} value={issue.id}>{issue.id} · {issue.lines.map((line) => `${line.name} (${line.quantity})`).join(", ")}</option>)}</select></Field>
-          <Field label="Delivery method" required><select className={inputClass} value={dispatchForm.method} onChange={(e) => setDispatchForm((f) => ({ ...f, method: e.target.value as DeliveryMethod }))}>{DELIVERY_METHODS.map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Pickup location" required><select className={inputClass} value={dispatchForm.pickupLocation} onChange={(e) => setDispatchForm((f) => ({ ...f, pickupLocation: e.target.value as PickupLocation }))}>{PICKUP_LOCATIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Destination" required><select className={inputClass} value={dispatchForm.destination} onChange={(e) => setDispatchForm((f) => ({ ...f, destination: e.target.value as DeliveryDestination }))}>{DELIVERY_DESTINATIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="Delivery address" required><input className={inputClass} value={dispatchForm.deliveryAddress || request?.deliveryAddress || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, deliveryAddress: e.target.value }))} /></Field>
-          <Field label="Contact person" required><input className={inputClass} value={dispatchForm.contactPerson || request?.deliveryContact || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, contactPerson: e.target.value }))} /></Field>
-          <Field label="Contact number"><input className={inputClass} value={dispatchForm.contactNumber || request?.phone || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, contactNumber: e.target.value }))} /></Field>
-          <Field label="Expected delivery date" required><input type="date" className={inputClass} value={dispatchForm.expectedDeliveryDate} onChange={(e) => setDispatchForm((f) => ({ ...f, expectedDeliveryDate: e.target.value }))} /></Field>
-          <Field label="Dispatched by"><input className={inputClass} value={dispatchForm.dispatchedBy || request?.assignedCoordinator || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, dispatchedBy: e.target.value }))} /></Field>
-          {dispatchForm.method === "Courier" && <Field label="Courier name" required><input className={inputClass} value={dispatchForm.courierName} onChange={(e) => setDispatchForm((f) => ({ ...f, courierName: e.target.value }))} /></Field>}
-          <Field label="Tracking number"><input className={inputClass} value={dispatchForm.trackingNumber} onChange={(e) => setDispatchForm((f) => ({ ...f, trackingNumber: e.target.value }))} /></Field>
-          <Field label="AWB number"><input className={inputClass} value={dispatchForm.awbNumber} onChange={(e) => setDispatchForm((f) => ({ ...f, awbNumber: e.target.value }))} /></Field>
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Create dispatch</h2>
+          <p className="mt-1 text-sm text-slate-500">Choose an issued record, then add the delivery and recipient details.</p>
         </div>
-        <button className={`${buttonClass} mt-4`} onClick={saveDispatch} disabled={!selectedIssue}>Create dispatch</button>
+        {!availableIssues.length && (
+          <p className="mt-4 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2.5 text-sm text-sky-800">
+            {issues.length
+              ? "Every issued record for this request already has a dispatch."
+              : "No issued records are available yet. Record an issue in Stage 2 before creating a dispatch."}
+          </p>
+        )}
+        <fieldset disabled={request?.status === "Closed"} className="mt-4 min-w-0">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <Field label="Issued record" required><select className={inputClass} value={selectedIssue?.id ?? ""} onChange={(e) => setIssueId(e.target.value)}><option value="">Select an issue</option>{availableIssues.map((issue) => <option key={issue.id} value={issue.id}>{issue.id} · {issue.lines.map((line) => `${line.name} (${line.quantity})`).join(", ")}</option>)}</select></Field>
+            <Field label="Delivery method" required><select className={inputClass} value={dispatchForm.method} onChange={(e) => setDispatchForm((f) => ({ ...f, method: e.target.value as DeliveryMethod }))}>{DELIVERY_METHODS.map((value) => <option key={value}>{value}</option>)}</select></Field>
+            <Field label="Pickup location" required><select className={inputClass} value={dispatchForm.pickupLocation} onChange={(e) => setDispatchForm((f) => ({ ...f, pickupLocation: e.target.value as PickupLocation }))}>{PICKUP_LOCATIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
+            <Field label="Destination" required><select className={inputClass} value={dispatchForm.destination} onChange={(e) => setDispatchForm((f) => ({ ...f, destination: e.target.value as DeliveryDestination }))}>{DELIVERY_DESTINATIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
+            <Field label="Delivery address" required><input className={inputClass} value={dispatchForm.deliveryAddress || request?.deliveryAddress || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, deliveryAddress: e.target.value }))} /></Field>
+            <Field label="Contact person" required><input className={inputClass} value={dispatchForm.contactPerson || request?.deliveryContact || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, contactPerson: e.target.value }))} /></Field>
+            <Field label="Contact number"><input className={inputClass} value={dispatchForm.contactNumber || request?.phone || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, contactNumber: e.target.value }))} /></Field>
+            <Field label="Expected delivery date" required><input type="date" className={inputClass} value={dispatchForm.expectedDeliveryDate} onChange={(e) => setDispatchForm((f) => ({ ...f, expectedDeliveryDate: e.target.value }))} /></Field>
+            <Field label="Dispatched by"><input className={inputClass} value={dispatchForm.dispatchedBy || request?.assignedCoordinator || ""} onChange={(e) => setDispatchForm((f) => ({ ...f, dispatchedBy: e.target.value }))} /></Field>
+            {dispatchForm.method === "Courier" && <Field label="Courier name" required><input className={inputClass} value={dispatchForm.courierName} onChange={(e) => setDispatchForm((f) => ({ ...f, courierName: e.target.value }))} /></Field>}
+            <Field label="Tracking number"><input className={inputClass} value={dispatchForm.trackingNumber} onChange={(e) => setDispatchForm((f) => ({ ...f, trackingNumber: e.target.value }))} /></Field>
+            <Field label="AWB number"><input className={inputClass} value={dispatchForm.awbNumber} onChange={(e) => setDispatchForm((f) => ({ ...f, awbNumber: e.target.value }))} /></Field>
+          </div>
+        </fieldset>
+        <button className={`${buttonClass} mt-4`} onClick={saveDispatch} disabled={!selectedIssue || request?.status === "Closed"}>Create dispatch</button>
       </section>
       <section className={cardClass}>
-        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Dispatch and receipt tracking</h2><Field label="Dispatch"><select className={inputClass} value={selectedDispatch?.id ?? ""} onChange={(e) => setDispatchId(e.target.value)}>{dispatches.map((entry) => <option key={entry.id} value={entry.id}>{entry.id} · {entry.status}</option>)}</select></Field></div>
-        {dispatches.length ? <div className="mt-3 space-y-2">{dispatches.map((entry) => <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-3"><div><p className="font-semibold">{entry.id} · {entry.method}</p><p className="text-xs text-slate-500">Issue {entry.issueId} · {entry.destination} · Expected {entry.expectedDeliveryDate}</p></div><div className="flex items-center gap-2"><StatusBadge>{entry.status}</StatusBadge>{entry.status !== "Receipt Confirmed" && <select aria-label={`Update ${entry.id} dispatch status`} className={`${inputClass} w-40`} value={entry.status} onChange={(e) => { const result = updateDispatchStatus(document, entry.id, e.target.value as (typeof DISPATCH_STATUSES)[number], "Coordinator"); if (result.error) { setError(result.error) } else { const err = commitWorkflow(result.document); if (err) setError(err); else setSuccess("Dispatch status updated.") } }}>{DISPATCH_STATUSES.filter((status) => status !== "Receipt Confirmed").map((status) => <option key={status}>{status}</option>)}</select>}</div></div>)}</div> : <p className="mt-3 text-sm text-slate-500">Create a dispatch from an issued record to begin receipt tracking.</p>}
-        {selectedDispatch && selectedDispatch.status !== "Receipt Confirmed" && <div className="mt-5 border-t border-slate-100 pt-5"><h3 className="font-semibold">Confirm receipt</h3><div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Received by" required><input className={inputClass} value={receiver} onChange={(e) => setReceiver(e.target.value)} /></Field><Field label="Condition at receipt"><select className={inputClass} value={condition} onChange={(e) => setCondition(e.target.value as SampleCondition)}>{SAMPLE_CONDITIONS.map((value) => <option key={value}>{value}</option>)}</select></Field></div><div className="mt-4 space-y-3">{document.issues.find((issue) => issue.id === selectedDispatch.issueId)?.lines.map((line) => { const already = document.receipts.filter((receipt) => receipt.dispatchId === selectedDispatch.id).flatMap((receipt) => receipt.lines).filter((entry) => entry.itemId === line.itemId).reduce((sum, entry) => sum + entry.receivedQuantity, 0); const remaining = Math.max(0, line.quantity - already); return <div key={line.itemId} className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[2fr_1fr_1fr_2fr] sm:items-end"><div><p className="font-semibold">{line.name}</p><p className="text-xs text-slate-500">Issued {line.quantity} · received {already} · outstanding {remaining}</p></div><Field label="Received"><input type="number" min={0} max={remaining} className={inputClass} value={received[line.itemId] ?? remaining} onChange={(e) => setReceived((current) => ({ ...current, [line.itemId]: Math.min(remaining, Math.max(0, Number(e.target.value) || 0)) }))} /></Field><Field label="Damaged"><input type="number" min={0} max={received[line.itemId] ?? remaining} className={inputClass} value={damaged[line.itemId] ?? 0} onChange={(e) => setDamaged((current) => ({ ...current, [line.itemId]: Math.min(received[line.itemId] ?? remaining, Math.max(0, Number(e.target.value) || 0)) }))} /></Field><Field label="Discrepancy notes"><input className={inputClass} value={discrepancyNotes[line.itemId] ?? ""} onChange={(e) => setDiscrepancyNotes((current) => ({ ...current, [line.itemId]: e.target.value }))} /></Field></div>})}</div><Field label="Receipt notes"><textarea className={`${textAreaClass} mt-2`} value={receiptNotes} onChange={(e) => setReceiptNotes(e.target.value)} /></Field><button className={`${buttonClass} mt-3`} onClick={saveReceipt}>Confirm receipt</button></div>}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Dispatch and receipt tracking</h2>
+            <p className="mt-1 text-sm text-slate-500">Advance each dispatch in order. Receipt confirmation is available after delivery.</p>
+          </div>
+          <div className="w-full sm:max-w-xs">
+            <Field label="Selected dispatch">
+              <select className={inputClass} value={selectedDispatch?.id ?? ""} onChange={(e) => { setDispatchId(e.target.value); clearReceiptForm(); setError(""); setSuccess("") }} disabled={!dispatches.length}>
+                {!dispatches.length && <option value="">No dispatches yet</option>}
+                {dispatches.map((entry) => <option key={entry.id} value={entry.id}>{entry.id} · {entry.status}</option>)}
+              </select>
+            </Field>
+          </div>
+        </div>
+        {dispatches.length ? (
+          <div className="mt-4 space-y-3">
+            {dispatches.map((entry) => {
+              const nextStatus = DISPATCH_STATUSES[DISPATCH_STATUSES.indexOf(entry.status) + 1]
+              return (
+                <div key={entry.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-slate-900">{entry.id}</p>
+                      <StatusBadge>{entry.status}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">{entry.method} · Issue {entry.issueId} · {entry.destination}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">Expected {entry.expectedDeliveryDate}{entry.trackingNumber ? ` · Tracking ${entry.trackingNumber}` : ""}</p>
+                  </div>
+                  {nextStatus && nextStatus !== "Receipt Confirmed" && (
+                    <button type="button" className={secondaryButtonClass} disabled={request?.status === "Closed"} onClick={() => advanceDispatch(entry.id, nextStatus)}>
+                      Advance to {nextStatus}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            Create a dispatch from an issued Stage 2 record to begin delivery tracking.
+          </p>
+        )}
+        {selectedDispatch?.status === "Delivered" && (
+          <div className="mt-5 border-t border-slate-200 pt-5">
+            <div>
+              <h3 className="font-semibold text-slate-900">Confirm receipt</h3>
+              <p className="mt-1 text-sm text-slate-500">Record quantities physically received. Add discrepancy notes for missing or damaged units.</p>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <Field label="Received by" required><input className={inputClass} value={receiver} onChange={(e) => setReceiver(e.target.value)} /></Field>
+              <Field label="Condition at receipt"><select className={inputClass} value={condition} onChange={(e) => setCondition(e.target.value as SampleCondition)}>{SAMPLE_CONDITIONS.map((value) => <option key={value}>{value}</option>)}</select></Field>
+              <Field label="Proof of delivery"><input className={inputClass} value={proofOfDelivery} onChange={(e) => setProofOfDelivery(e.target.value)} /></Field>
+            </div>
+            <div className="mt-4 space-y-3">
+              {document.issues.find((issue) => issue.id === selectedDispatch.issueId)?.lines.map((line) => {
+                const already = document.receipts.filter((receipt) => receipt.dispatchId === selectedDispatch.id).flatMap((receipt) => receipt.lines).filter((entry) => entry.itemId === line.itemId).reduce((sum, entry) => sum + entry.receivedQuantity, 0)
+                const remaining = Math.max(0, line.quantity - already)
+                return (
+                  <div key={line.itemId} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 lg:grid-cols-[minmax(0,2fr)_7rem_7rem_minmax(0,2fr)] lg:items-end">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <SampleThumb name={line.name} color={colorOf(line.itemId)} size="sm" />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">{line.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">Issued {line.quantity} · received {already} · outstanding {remaining}</p>
+                      </div>
+                    </div>
+                    {remaining > 0 ? (
+                      <>
+                        <Field label="Received"><input type="number" min={0} max={remaining} step={1} className={inputClass} value={received[line.itemId] ?? remaining} onChange={(e) => { const quantity = Math.min(remaining, Math.max(0, Number(e.target.value) || 0)); setReceived((current) => ({ ...current, [line.itemId]: quantity })); setDamaged((current) => ({ ...current, [line.itemId]: Math.min(current[line.itemId] ?? 0, quantity) })) }} /></Field>
+                        <Field label="Damaged"><input type="number" min={0} max={received[line.itemId] ?? remaining} step={1} className={inputClass} value={damaged[line.itemId] ?? 0} onChange={(e) => setDamaged((current) => ({ ...current, [line.itemId]: Math.min(received[line.itemId] ?? remaining, Math.max(0, Number(e.target.value) || 0)) }))} /></Field>
+                        <Field label="Discrepancy notes"><input className={inputClass} value={discrepancyNotes[line.itemId] ?? ""} onChange={(e) => setDiscrepancyNotes((current) => ({ ...current, [line.itemId]: e.target.value }))} /></Field>
+                      </>
+                    ) : (
+                      <p className="text-sm font-medium text-emerald-700 lg:col-span-3">All issued units for this sample have been received.</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <Field label="Receipt notes"><textarea className={textAreaClass} value={receiptNotes} onChange={(e) => setReceiptNotes(e.target.value)} /></Field>
+              <button className={buttonClass} onClick={saveReceipt} disabled={!receiver.trim() || request?.status === "Closed"}>Confirm receipt</button>
+            </div>
+          </div>
+        )}
+        {selectedDispatch && selectedDispatch.status !== "Delivered" && selectedDispatch.status !== "Receipt Confirmed" && (
+          <p className="mt-5 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            Advance this dispatch to Delivered before entering receipt quantities.
+          </p>
+        )}
+        {selectedDispatch?.status === "Receipt Confirmed" && (
+          <p className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+            Receipt is complete. Confirmed quantities are available to Stage 4 for review.
+          </p>
+        )}
       </section>
     </StageLayout>
   )
@@ -592,8 +1263,13 @@ export function DeliveryReceiptPage() {
 
 export function ReviewsApprovalsPage() {
   const document = useWorkflow()
+  const inventory = useInventory()
+  const colorOf = (itemId: string) => inventory.find((item) => item.id === itemId)?.color
   const requests = document.requests.filter((request) => request.status !== "Draft")
-  const [request, setRequestId] = useSelectedRequest(requests)
+  const [request, setRequestId] = useSelectedRequest(
+    requests,
+    (candidate) => document.reviews.some((review) => review.requestId === candidate.id)
+  )
   const reviews = document.reviews.filter((review) => review.requestId === request?.id)
   const reviewers = [...new Set([request?.requester, request?.assignedCoordinator, ...reviews.flatMap((entry) => entry.cycles.map((cycle) => cycle.reviewer))].filter((name): name is string => Boolean(name)))]
   const [reviewId, setReviewId] = React.useState("")
@@ -655,12 +1331,12 @@ export function ReviewsApprovalsPage() {
       <Feedback error={error} success={success} />
       <section className={cardClass}>
         <RequestSelect requests={requests} selectedId={request?.id} onChange={setRequestId} />
-        {request && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><strong>{request.project}</strong> · {request.id} · {request.requester}</div>}
+        {request && <div className={`mt-3 rounded-lg p-3 text-sm ${brandHeadingBand}`}><strong className={brandHeadingText}>{request.project}</strong> · {request.id} · {request.requester}</div>}
       </section>
       <section className={cardClass}>
         <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
           <Field label="Received sample" required><select className={inputClass} value={review?.id ?? ""} onChange={(e) => setReviewId(e.target.value)}><option value="">Select received sample</option>{reviews.map((entry) => <option key={entry.id} value={entry.id}>{entry.name} · {entry.code} · received {entry.receivedQuantity}</option>)}</select></Field>
-          {review && <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3 text-sm"><span>Request {review.requestId}</span><span>·</span><span>Issued {review.issuedQuantity}</span><span>·</span><span>Received {review.receivedQuantity}</span><StatusBadge>{cycle?.status ?? "Awaiting Review"}</StatusBadge></div>}
+          {review && <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3 text-sm"><SampleThumb name={review.name} color={colorOf(review.itemId)} size="sm" /><span className="font-semibold text-slate-900">{review.name}</span><span className="text-slate-400">·</span><span className="text-slate-500">{review.code}</span><span className="text-slate-400">·</span><span>Request {review.requestId}</span><span className="text-slate-400">·</span><span>Issued {review.issuedQuantity}</span><span className="text-slate-400">·</span><span>Received {review.receivedQuantity}</span><StatusBadge>{cycle?.status ?? "Awaiting Review"}</StatusBadge></div>}
         </div>
         {!reviews.length && <p className="mt-4 text-sm text-slate-500">No confirmed received samples are ready for review yet.</p>}
         {review && <div className="mt-5 grid gap-6 lg:grid-cols-2">
@@ -759,7 +1435,13 @@ function ReturnPlanForm({
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h3 className="font-semibold">{sample.name} <span className="font-normal text-slate-500">· {sample.code}</span></h3><p className="mt-1 text-xs text-slate-500">Issued {sample.issuedQuantity} · received {sample.receivedQuantity} · final review {sample.reviewSummary}</p></div>
+        <div className="flex min-w-0 items-start gap-3">
+          <SampleThumb name={sample.name} color={inventory.find((item) => item.id === sample.itemId)?.color} />
+          <div className="min-w-0">
+            <h3 className="font-semibold">{sample.name} <span className="font-normal text-slate-500">· {sample.code}</span></h3>
+            <p className="mt-1 text-xs text-slate-500">Issued {sample.issuedQuantity} · received {sample.receivedQuantity} · final review {sample.reviewSummary}</p>
+          </div>
+        </div>
         <StatusBadge>{sample.issuedQuantity ? `${sample.issuedQuantity - dispositionTotal(sample)} unaccounted` : "Not issued"}</StatusBadge>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -794,7 +1476,10 @@ export function ReturnsClosurePage() {
   const document = useWorkflow()
   const allocation = useAllocation()
   const requests = document.requests.filter((request) => request.status !== "Draft")
-  const [request, setRequestId] = useSelectedRequest(requests)
+  const [request, setRequestId] = useSelectedRequest(
+    requests,
+    (candidate) => document.issues.some((issue) => issue.requestId === candidate.id)
+  )
   const record = request ? mergedClosureRecord(document, request.id) : null
   const [closedBy, setClosedBy] = React.useState("")
   const [closureDate, setClosureDate] = React.useState(today())
@@ -839,18 +1524,18 @@ export function ReturnsClosurePage() {
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"><RequestSelect requests={requests} selectedId={request?.id} onChange={setRequestId} />{request && <StatusBadge>{request.status}</StatusBadge>}</div>
         {request && <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[
           ["Project", request.project], ["Requester", request.requester], ["Request ID", request.id], ["Sample details", request.sampleDetails],
-        ].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div>}
+        ].map(([label, value]) => <div key={label} className={`rounded-lg p-3 ${brandHeadingBand}`}><p className={`text-xs font-semibold uppercase tracking-wider ${brandHeadingText}`}>{label}</p><p className="mt-1 text-sm font-semibold text-slate-900">{value}</p></div>)}</div>}
       </section>
       {!request ? <section className={cardClass}><p className="text-sm text-slate-500">No requests are available for reconciliation.</p></section> : <>
         <section className={cardClass}>
           <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Sample return & final disposition</h2>{request.pendingResolved && <StatusBadge>Pending demand resolved</StatusBadge>}</div>
-          {record?.samples.some((sample) => sample.issuedQuantity > 0) ? <div className="mt-4 space-y-4">{record.samples.filter((sample) => sample.issuedQuantity > 0).map((sample) => <ReturnPlanForm key={sample.itemId} requestId={request.id} sample={sample} readOnly={readOnly} />)}</div> : <p className="mt-3 text-sm text-slate-500">No Stage 2 issues exist for this request. Resolve remaining demand before closing.</p>}
+          {record?.samples.some((sample) => sample.issuedQuantity > 0) ? <div className="mt-4 space-y-4">{record.samples.filter((sample) => sample.issuedQuantity > 0).map((sample) => <ReturnPlanForm key={`${request.id}-${sample.itemId}`} requestId={request.id} sample={sample} readOnly={readOnly} />)}</div> : <p className="mt-3 text-sm text-slate-500">No Stage 2 issues exist for this request. Resolve remaining demand before closing.</p>}
         </section>
         <section className={cardClass}>
           <h2 className="text-lg font-semibold">Request closure</h2>
           {totals && <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">{([
             ["Issued", totals.issued], ["Received", totals.received], ["Accounted", totals.accounted], ["Outstanding", totals.outstanding], ["Quarantined", totals.quarantined],
-          ] as Array<[string, number]>).map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className={`mt-1 text-xl font-bold ${label === "Outstanding" && value > 0 ? "text-rose-700" : "text-slate-900"}`}>{value}</p></div>)}</div>}
+          ] as Array<[string, number]>).map(([label, value]) => <div key={label} className={`rounded-lg p-3 ${brandHeadingBand}`}><p className={`text-xs font-semibold uppercase tracking-wider ${brandHeadingText}`}>{label}</p><p className={`mt-1 text-xl font-bold ${label === "Outstanding" && value > 0 ? "text-rose-700" : "text-slate-900"}`}>{value}</p></div>)}</div>}
           <div className="mt-4 flex flex-wrap items-center gap-2"><span className="text-sm font-medium">Closure status</span><StatusBadge>{readOnly ? "Closed" : blockers.length ? "Pending Closure" : "Ready to Close"}</StatusBadge></div>
           {allocation[request.id]?.totals.pending && !request.pendingResolved && <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><p>{allocation[request.id].totals.pending} unissued unit(s) are still pending. Cancel that demand before closing, or leave the request open for later stock allocation.</p><button disabled={readOnly} className={`${secondaryButtonClass} mt-2`} onClick={cancelPending}>Cancel unissued pending demand</button></div>}
           {blockers.length > 0 && <div className="mt-4 rounded-lg bg-rose-50 p-3"><p className="text-sm font-semibold text-rose-800">Items to resolve before closure</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-rose-700">{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div>}

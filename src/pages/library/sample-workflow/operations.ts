@@ -239,6 +239,7 @@ export function addBag(document: WorkflowDocument, draft: BagDraft, items: Inven
   const blocked = editableInStage2(request)
   if (blocked || !request) return fail(document, blocked ?? "Request not found.")
   if (!draft.name.trim()) return fail(document, "Enter a bag name.")
+  if (!draft.stockLocation.trim()) return fail(document, "Select a stock location.")
   if (!draft.lines.length) return fail(document, "Add at least one sample line to the bag.")
   const allocation = allocateReservations(document.requests, document.issues, items)[request.id]
 
@@ -297,6 +298,10 @@ export function updateBag(
   if (!bag) return fail(document, "Bag not found.")
   if (findRequest(document, bag.requestId)?.status === "Closed") {
     return fail(document, "This request is closed and is read-only.")
+  }
+  if (patch.name !== undefined && !patch.name.trim()) return fail(document, "Enter a bag name.")
+  if (patch.stockLocation !== undefined && !patch.stockLocation.trim()) {
+    return fail(document, "Select a stock location.")
   }
   return ok({
     ...document,
@@ -432,6 +437,9 @@ export type DispatchDraft = {
 export function createDispatch(document: WorkflowDocument, draft: DispatchDraft): OpResult {
   const issue = document.issues.find((entry) => entry.id === draft.issueId)
   if (!issue || issue.requestId !== draft.requestId) return fail(document, "Issue not found for this request.")
+  if (document.dispatches.some((dispatch) => dispatch.issueId === issue.id)) {
+    return fail(document, "This issue already has a dispatch. Create dispatches only for issues that have not been dispatched.")
+  }
   const request = findRequest(document, draft.requestId)
   if (!request) return fail(document, "Request not found.")
   if (request.status === "Closed") return fail(document, "This request is closed and is read-only.")
@@ -484,8 +492,10 @@ export function updateDispatchStatus(
   if (dispatch.status === "Receipt Confirmed") {
     return fail(document, "A confirmed receipt cannot be moved back to an earlier dispatch status.")
   }
-  if (status === "Receipt Confirmed") {
-    return fail(document, "Receipt Confirmed is set by recording the receipt in Stage 3.")
+  const statusesBeforeReceipt: DispatchStatus[] = ["Ready for Pickup", "Picked Up", "In Transit", "Delivered"]
+  const nextStatus = statusesBeforeReceipt[statusesBeforeReceipt.indexOf(dispatch.status) + 1]
+  if (!nextStatus || status !== nextStatus) {
+    return fail(document, `Dispatch status must advance one step at a time${nextStatus ? ` to ${nextStatus}` : ""}.`)
   }
   return ok({
     ...document,
@@ -527,6 +537,9 @@ export function confirmReceipt(document: WorkflowDocument, draft: ReceiptDraftIn
   if (request.status === "Closed") return fail(document, "This request is closed and is read-only.")
   if (dispatch.status === "Receipt Confirmed") {
     return fail(document, "A receipt is already confirmed for this dispatch.")
+  }
+  if (dispatch.status !== "Delivered") {
+    return fail(document, "Mark this dispatch as delivered before confirming receipt.")
   }
 
   const issue = document.issues.find((entry) => entry.id === dispatch.issueId)
@@ -695,8 +708,19 @@ export function startReview(
   }
   if (!input.reviewer.trim()) return fail(document, "Select a reviewer.")
   if (!input.dueDate) return fail(document, "Enter the review due date.")
+  if (review.receivedQuantity <= 0) return fail(document, "Only confirmed received samples can be sent for review.")
 
   const existing = latestCycle(review)
+  if (existing?.decision && existing.finalApproval === "Pending") {
+    return fail(document, "Record the final decision for the current review before starting another cycle.")
+  }
+  if (
+    existing?.decision &&
+    existing.finalApproval !== "Changes Required" &&
+    !(existing.decision === "Revision Required" && existing.finalApproval === "Not Required")
+  ) {
+    return fail(document, "A new review cycle can start only after changes are required.")
+  }
   if (existing && !existing.decision) {
     const updated = {
       ...existing,
@@ -774,8 +798,12 @@ export function recordReviewDecision(document: WorkflowDocument, input: ReviewDr
 
   const review = findReview(document, input)
   if (!review) return fail(document, "No confirmed receipt is available for this sample yet.")
+  if (review.requestId !== request.id) return fail(document, "The review does not belong to this request.")
 
   const existing = latestCycle(review)
+  if (!existing || existing.status !== "Under Review") {
+    return fail(document, "Start the review before recording its decision.")
+  }
   const status: ReviewCycle["status"] =
     input.decision === "Revision Required" ? "Revision Requested" : "Decision Recorded"
   const cycle: ReviewCycle = {
@@ -1026,7 +1054,7 @@ export function updateClosureSample(
   document: WorkflowDocument,
   requestId: string,
   itemId: string,
-  patch: Partial<ClosureSample>
+  patch: Pick<ClosureSample, "returnRequired" | "expectedReturnDate" | "returnedQuantity">
 ): OpResult {
   const record = mergedClosureRecord(document, requestId)
   if (!record) return fail(document, "Request not found.")
@@ -1035,8 +1063,18 @@ export function updateClosureSample(
   }
   const existingSample = record.samples.find((entry) => entry.itemId === itemId)
   const nextReturned = patch.returnedQuantity ?? existingSample?.returnedQuantity ?? 0
+  const nextExpectedReturnDate = patch.expectedReturnDate ?? existingSample?.expectedReturnDate ?? ""
   if (!Number.isInteger(nextReturned) || nextReturned < 0 || nextReturned > (existingSample?.issuedQuantity ?? 0)) {
     return fail(document, "Expected returned quantity must be a whole number between zero and the issued quantity.")
+  }
+  if (nextReturned > 0 && !nextExpectedReturnDate.trim()) {
+    return fail(document, "Enter the expected return date.")
+  }
+  if (!patch.returnRequired && (nextReturned > 0 || (existingSample?.receivedBackQuantity ?? 0) > 0)) {
+    return fail(document, "A return cannot be disabled while return quantities are recorded.")
+  }
+  if (nextReturned < (existingSample?.receivedBackQuantity ?? 0)) {
+    return fail(document, "Expected returned quantity cannot be less than the quantity already received back.")
   }
   const samples = record.samples.map((sample) => (sample.itemId === itemId ? { ...sample, ...patch } : sample))
   return ok(upsertClosure(document, { ...record, samples }))
@@ -1067,8 +1105,20 @@ export function verifyReturn(
   }
   const sample = record.samples.find((entry) => entry.itemId === itemId)
   if (!sample) return { document, items, error: "Sample not found on this request." }
+  if (!sample.returnRequired) {
+    return { document, items, error: "Save a return plan before verifying returned samples." }
+  }
+  if (!sample.expectedReturnDate || sample.returnedQuantity < 1) {
+    return { document, items, error: "Save an expected return date and quantity before verifying returned samples." }
+  }
   if (!input.verifiedBy.trim()) return { document, items, error: "Enter who verified the return." }
   if (!input.actualReturnDate) return { document, items, error: "Enter the actual return date." }
+  if (input.receivedBackQuantity > sample.returnedQuantity) {
+    return { document, items, error: "Received-back quantity cannot exceed the planned returned quantity." }
+  }
+  if (sample.verifiedAt && sample.conditionAtReturn !== input.conditionAtReturn) {
+    return { document, items, error: "Return condition cannot be changed after stock has been posted." }
+  }
 
   const patched: ClosureSample = {
     ...sample,
