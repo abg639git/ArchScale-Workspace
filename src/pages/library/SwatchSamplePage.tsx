@@ -1,749 +1,127 @@
 import * as React from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
-  AlertTriangle,
-  Check,
+  ArrowRight,
   CheckCircle2,
-  ChevronRight,
-  ClipboardCheck,
-  Image,
-  LayoutGrid,
-  List,
-  MoreHorizontal,
-  Package,
+  Clock3,
+  Edit2,
   Plus,
-  RefreshCw,
-  RotateCcw,
+  Package,
   Search,
   Send,
-  Truck,
-  UserRound,
+  ShoppingBag,
+  Trash2,
   X,
 } from "@/components/ui/icons"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { initialItems, type InventoryItem } from "@/pages/products/inventory-data"
 
-type WorkflowStage = "request" | "issue" | "delivery" | "review" | "return"
-type Priority = "Urgent" | "High" | "Normal" | "Low"
-type OrganizationType = "Client" | "Studio"
+type RequestStatus = "Draft" | "Submitted" | "Ready for Select & Issue"
 
-type SampleLine = {
-  code: string
-  name: string
-  category: string
-  color: string
-  requestedQuantity: number
-  issuedQuantity: number
-}
-
-type WorkflowRequest = {
+type MaterialRequest = {
   id: string
-  organization: string
-  organizationType: OrganizationType
   project: string
   requester: string
   requestType: string
   sampleDetails: string
   quantity: number
   purpose: string
-  priority: Priority
+  priority: "Urgent" | "High" | "Normal" | "Low"
   requiredDate: string
   deliveryAddress: string
-  assignedTo: string
-  stage: WorkflowStage
-  status: string
-  samples: SampleLine[]
-  availability: string
-  stockLocation: string
-  condition: string
-  issuedQuantity: number
-  returnBy: string
-  issueStatus: string
-  dispatchRequestCreated: boolean
-  pickupLocation: string
-  deliveryMethod: string
-  contactPerson: string
-  expectedDate: string
-  courier: string
-  trackingNumber: string
-  dispatchStatus: string
-  receiptStatus: string
-  receivedQuantity: number
-  receivedCondition: string
-  reviewer: string
-  decision: string
-  reviewComments: string
-  followUp: string
-  finalApproval: boolean
-  returnStatus: string
-  returnedQuantity: number
-  returnCondition: string
-  finalDisposition: string
-  stockUpdated: boolean
-  closed: boolean
+  assignedCoordinator: string
+  status: RequestStatus
+  createdAt: string
+  submittedAt?: string
+  readyAt?: string
 }
 
-type StageSeed = {
-  id: string
-  organization: string
-  organizationType: OrganizationType
-  project: string
-  requester: string
-  assignedTo: string
-  sampleIndex: number
-  quantity: number
-  dayOffset: number
-  priority: Priority
-  stage: WorkflowStage
+const requestTypes = ["Project sample", "Client presentation", "Mock-up", "Replacement"]
+const priorities: MaterialRequest["priority"][] = ["Urgent", "High", "Normal", "Low"]
+const statusFilters = ["All", "Submitted", "Draft", "Ready for Select & Issue"] as const
+const requestsStorageKey = "archscale.samples.stage1.requests"
+const stage2RequestStorageKey = "archscale.samples.stage2.currentRequest"
+const stage2WorkflowsStorageKey = "archscale.samples.stage2.workflows"
+const stage2DispatchesStorageKey = "archscale.samples.stage2.dispatches"
+const issuedRequestsStorageKey = "archscale.samples.requests"
+const inventoryStorageKey = "archscale.inventory.items"
+
+const sampleConditions = ["Good", "Damaged"]
+const sampleIssueStatuses = ["Prepared", "Issued"]
+
+const inputClass =
+  "h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+const labelClass = "mb-1.5 block text-xs font-medium text-foreground"
+
+function createRequestId(requests: MaterialRequest[]): string {
+  const year = new Date().getFullYear()
+  const prefix = `MR-${year}-`
+  const lastNumber = requests.reduce((largest, request) => {
+    if (!request.id.startsWith(prefix)) return largest
+    const number = Number(request.id.slice(prefix.length))
+    return Number.isInteger(number) ? Math.max(largest, number) : largest
+  }, 0)
+  return `${prefix}${String(lastNumber + 1).padStart(4, "0")}`
 }
 
-const stages: { id: WorkflowStage; label: string; action: string; tint: string }[] = [
-  { id: "request", label: "Sample Request", action: "Enter details", tint: "bg-slate-50" },
-  { id: "issue", label: "Select & Issue", action: "Issue material", tint: "bg-orange-50/60" },
-  { id: "delivery", label: "Delivery & Receipt", action: "Confirm receipt", tint: "bg-violet-50/50" },
-  { id: "review", label: "Reviews & Approvals", action: "Record decision", tint: "bg-rose-50/50" },
-  { id: "return", label: "Returns & Closure", action: "Complete return", tint: "bg-emerald-50/50" },
-]
-
-const sampleCatalogue = [
-  { code: "BAG-3107", name: "Linen Weave Fabric, Sand", category: "Fabric", color: "#cdb993", stock: 24, location: "Studio Library" },
-  { code: "BAG-3102", name: "Oak Laminate, Natural", category: "Laminate", color: "#c8a06e", stock: 18, location: "Material Library" },
-  { code: "BAG-3110", name: "Calacatta Oro Marble", category: "Stone", color: "#e6e2d5", stock: 6, location: "Stone Archive" },
-  { code: "BAG-3101", name: "Brushed Brass Handle", category: "Hardware", color: "#b18d35", stock: 40, location: "Hardware Store" },
-  { code: "BAG-3105", name: "Walnut Veneer Plank", category: "Veneer", color: "#6e4c36", stock: 12, location: "Material Library" },
-  { code: "BAG-3108", name: "Terrazzo Tile, Mint", category: "Tile", color: "#a9c5b2", stock: 9, location: "Tile Archive" },
-  { code: "BAG-3112", name: "Fluted Glass Panel", category: "Glass", color: "#b9d1d2", stock: 7, location: "Studio Library" },
-  { code: "BAG-3114", name: "Ceramic Mosaic", category: "Tile", color: "#84a9c0", stock: 21, location: "Tile Archive" },
-]
-
-const teamMembers = ["Jasmine Kaur", "John Doe", "Ritik Verma", "Karan Mehra", "Neha Kulkarni"]
-const reviewers = ["Jasmine Kaur", "John Doe", "Ritik Verma", "Karan Mehra"]
-const stagePosition: Record<WorkflowStage, number> = {
-  request: 0,
-  issue: 1,
-  delivery: 2,
-  review: 3,
-  return: 4,
+function statusStyle(status: RequestStatus): string {
+  if (status === "Draft") return "bg-slate-100 text-slate-700"
+  if (status === "Submitted") return "bg-amber-100 text-amber-800"
+  return "bg-emerald-100 text-emerald-800"
 }
 
-const dateOffset = (offset: number) => {
-  const date = new Date()
-  date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() + offset)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
+function formatRequestDate(value?: string): string {
+  if (!value) return "—"
+  const date = new Date(`${value.slice(0, 10)}T12:00:00`)
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(date)
 }
 
-const today = dateOffset(0)
+function validateRequest(request: MaterialRequest): string | null {
+  const missing = [
+    ["Project", request.project],
+    ["Requester", request.requester],
+    ["Request type", request.requestType],
+    ["Sample details", request.sampleDetails],
+    ["Required date", request.requiredDate],
+    ["Delivery address", request.deliveryAddress],
+    ["Assigned coordinator", request.assignedCoordinator],
+  ].filter(([, value]) => !value.trim()).map(([label]) => label)
 
-const makeRequest = (seed: StageSeed): WorkflowRequest => {
-  const sample = sampleCatalogue[seed.sampleIndex % sampleCatalogue.length]
-  const requestedSampleQuantity = Math.min(2, seed.quantity)
-  const issuedQuantity = stagePosition[seed.stage] > 0 ? requestedSampleQuantity : 0
-  const receivedQuantity = stagePosition[seed.stage] > 1 ? issuedQuantity : 0
-  const returnedQuantity = stagePosition[seed.stage] > 3 ? issuedQuantity : 0
+  if (missing.length) return `Complete the required fields: ${missing.join(", ")}.`
+  if (!Number.isInteger(request.quantity) || request.quantity < 1) {
+    return "Quantity must be a whole number greater than zero."
+  }
+  return null
+}
 
+function emptyRequest(id: string): MaterialRequest {
   return {
-    ...seed,
-    requestType: "Project sample",
-    sampleDetails: sample.name,
-    purpose: "Material review for the current project package.",
-    requiredDate: dateOffset(seed.dayOffset),
-    deliveryAddress: "Project site, Mumbai, India",
-    status: seed.stage === "request" ? "Submitted" : "In progress",
-    samples: [{
-      code: sample.code,
-      name: sample.name,
-      category: sample.category,
-      color: sample.color,
-      requestedQuantity: requestedSampleQuantity,
-      issuedQuantity,
-    }],
-    availability: "Available",
-    stockLocation: sample.location,
-    condition: "Good",
-    issuedQuantity,
-    returnBy: dateOffset(14),
-    issueStatus: issuedQuantity ? "Issued" : "Not issued",
-    dispatchRequestCreated: stagePosition[seed.stage] > 0,
-    pickupLocation: sample.location,
-    deliveryMethod: "Courier",
-    contactPerson: seed.requester,
-    expectedDate: dateOffset(2),
-    courier: "Blue Dart",
-    trackingNumber: "BD-482619",
-    dispatchStatus: receivedQuantity ? "Delivered" : "In transit",
-    receiptStatus: receivedQuantity ? "Received" : "Pending",
-    receivedQuantity,
-    receivedCondition: "Good",
-    reviewer: "Jasmine Kaur",
-    decision: stagePosition[seed.stage] > 2 ? "Approved" : "Pending",
-    reviewComments: "",
-    followUp: "None",
-    finalApproval: stagePosition[seed.stage] > 2,
-    returnStatus: returnedQuantity ? "Received" : "Awaiting return",
-    returnedQuantity,
-    returnCondition: "Good",
-    finalDisposition: returnedQuantity ? "Returned to stock" : "Pending",
-    stockUpdated: false,
-    closed: false,
+    id,
+    project: "",
+    requester: "",
+    requestType: requestTypes[0],
+    sampleDetails: "",
+    quantity: 1,
+    purpose: "",
+    priority: "Normal",
+    requiredDate: "",
+    deliveryAddress: "",
+    assignedCoordinator: "",
+    status: "Draft",
+    createdAt: new Date().toISOString(),
   }
 }
 
-const createDemoRequests = (): WorkflowRequest[] => [
-  makeRequest({ id: "REQ-2612", organization: "Mehra Constructions", organizationType: "Client", project: "Savanna Residence", requester: "Karan Mehra", assignedTo: "Jasmine Kaur", sampleIndex: 0, quantity: 2, dayOffset: -7, priority: "High", stage: "request" }),
-  makeRequest({ id: "REQ-2614", organization: "Greenleaf Architects", organizationType: "Studio", project: "After Hours Office", requester: "Neha Kulkarni", assignedTo: "John Doe", sampleIndex: 5, quantity: 4, dayOffset: 3, priority: "Normal", stage: "request" }),
-  makeRequest({ id: "REQ-2611", organization: "Studio Anand Associates", organizationType: "Studio", project: "Solitude House", requester: "Neha Kulkarni", assignedTo: "Ritik Verma", sampleIndex: 4, quantity: 5, dayOffset: -2, priority: "Urgent", stage: "issue" }),
-  makeRequest({ id: "REQ-2613", organization: "Kaveri Interiors", organizationType: "Studio", project: "Pyramid Tower", requester: "John Doe", assignedTo: "Karan Mehra", sampleIndex: 3, quantity: 7, dayOffset: 4, priority: "High", stage: "issue" }),
-  makeRequest({ id: "REQ-2610", organization: "Mehra Constructions", organizationType: "Client", project: "Zuri Hotel", requester: "Karan Mehra", assignedTo: "Jasmine Kaur", sampleIndex: 6, quantity: 1, dayOffset: -4, priority: "High", stage: "delivery" }),
-  makeRequest({ id: "REQ-2615", organization: "Greenleaf Architects", organizationType: "Studio", project: "Wildcrest Villas", requester: "Ritik Verma", assignedTo: "John Doe", sampleIndex: 0, quantity: 2, dayOffset: 5, priority: "Normal", stage: "delivery" }),
-  makeRequest({ id: "REQ-2608", organization: "Terra Partners", organizationType: "Client", project: "Savanna Residence", requester: "Karan Mehra", assignedTo: "Ritik Verma", sampleIndex: 0, quantity: 3, dayOffset: -1, priority: "Normal", stage: "review" }),
-  makeRequest({ id: "REQ-2606", organization: "Studio Anand Associates", organizationType: "Studio", project: "After Hours Office", requester: "Neha Kulkarni", assignedTo: "Jasmine Kaur", sampleIndex: 5, quantity: 8, dayOffset: -3, priority: "High", stage: "review" }),
-  makeRequest({ id: "REQ-2604", organization: "Kaveri Interiors", organizationType: "Studio", project: "Pyramid Tower", requester: "John Doe", assignedTo: "Karan Mehra", sampleIndex: 1, quantity: 3, dayOffset: 1, priority: "Low", stage: "return" }),
-  makeRequest({ id: "REQ-2602", organization: "Mehra Constructions", organizationType: "Client", project: "Zuri Hotel", requester: "Karan Mehra", assignedTo: "Jasmine Kaur", sampleIndex: 2, quantity: 2, dayOffset: 2, priority: "Normal", stage: "return" }),
-]
-
-const createDemoStockLevels = (): Record<string, number> => {
-  const levels = Object.fromEntries(sampleCatalogue.map((sample) => [sample.code, sample.stock]))
-  for (const request of createDemoRequests()) {
-    if (stagePosition[request.stage] === 0 || request.closed) continue
-    for (const sample of request.samples) {
-      levels[sample.code] = Math.max(0, (levels[sample.code] ?? 0) - sample.issuedQuantity)
-    }
-  }
-  return levels
-}
-
-const priorityStyles: Record<Priority, string> = {
-  Urgent: "bg-rose-100 text-rose-700",
-  High: "bg-orange-100 text-orange-800",
-  Normal: "bg-slate-100 text-slate-700",
-  Low: "bg-muted text-muted-foreground",
-}
-
-const formatDate = (date: string) => {
-  if (!date) return "Not set"
-  return new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(new Date(`${date}T12:00:00`))
-}
-
-export function SwatchSamplePage() {
-  const [requests, setRequests] = usePersistentState("archscale.samples.requests", createDemoRequests)
-  const [stockLevels, setStockLevels] = usePersistentState("archscale.samples.stock", createDemoStockLevels)
-  const [view, setView] = React.useState<"board" | "all">("board")
-  const [activeStage, setActiveStage] = React.useState<WorkflowStage | "all">("all")
-  const [search, setSearch] = React.useState("")
-  const [activeRequestId, setActiveRequestId] = React.useState<string | null>(null)
-  const [nextRequestNumber, setNextRequestNumber] = usePersistentState("archscale.samples.nextRequest", 2616)
-  const [isResettingDemo, setIsResettingDemo] = React.useState(false)
-  const [feedback, setFeedback] = React.useState("")
-
-  const query = search.trim().toLowerCase()
-  const visibleRequests = requests.filter((request) => {
-    const matchesStage = activeStage === "all" || request.stage === activeStage
-    const matchesSearch = !query ||
-      `${request.id} ${request.organization} ${request.project} ${request.requester} ${request.sampleDetails} ${request.samples.map((sample) => `${sample.name} ${sample.code}`).join(" ")} ${request.stage} ${request.status} ${request.assignedTo} ${request.courier} ${request.trackingNumber} ${request.reviewer} ${request.decision} ${request.returnStatus} ${request.finalDisposition}`.toLowerCase().includes(query)
-    return matchesStage && matchesSearch
-  })
-  const activeRequest = requests.find((request) => request.id === activeRequestId) ?? null
-
-  const stageColumns: { label: string; render: (request: WorkflowRequest) => React.ReactNode }[] = activeStage === "all"
-    ? [
-        { label: "Stage", render: (request) => stages[stagePosition[request.stage]].label },
-        { label: "Sample details", render: (request) => request.sampleDetails || "No samples selected" },
-        { label: "Required", render: (request) => formatDate(request.requiredDate) },
-      ]
-    : activeStage === "request"
-      ? [
-          { label: "Requester", render: (request) => request.requester || "Not set" },
-          { label: "Requested samples", render: (request) => `${request.sampleDetails || "No samples selected"} · ${request.quantity} requested` },
-          { label: "Required", render: (request) => formatDate(request.requiredDate) },
-        ]
-      : activeStage === "issue"
-        ? [
-            { label: "Sample bag", render: (request) => request.samples.length ? request.samples.map((sample) => `${sample.name} (${sample.code})`).join(", ") : "No samples selected" },
-            { label: "Availability", render: (request) => `${request.availability} · ${request.stockLocation}` },
-            { label: "Quantity", render: (request) => `${request.issuedQuantity} of ${request.quantity} issued` },
-          ]
-        : activeStage === "delivery"
-          ? [
-              { label: "Dispatch", render: (request) => `${request.courier || "No courier"}${request.trackingNumber ? ` · ${request.trackingNumber}` : ""}` },
-              { label: "Receipt", render: (request) => `${request.receiptStatus} · ${request.receivedQuantity} of ${request.issuedQuantity} received` },
-              { label: "Expected", render: (request) => formatDate(request.expectedDate) },
-            ]
-          : activeStage === "review"
-            ? [
-                { label: "Reviewer", render: (request) => request.reviewer || "Not assigned" },
-                { label: "Decision", render: (request) => `${request.decision}${request.finalApproval ? " · Final approval" : ""}` },
-                { label: "Follow-up", render: (request) => request.followUp || "None" },
-              ]
-            : [
-                { label: "Return due", render: (request) => formatDate(request.returnBy) },
-                { label: "Return status", render: (request) => `${request.returnStatus} · ${request.returnedQuantity} of ${request.issuedQuantity} returned` },
-                { label: "Condition / disposition", render: (request) => `${request.returnCondition} · ${request.finalDisposition}` },
-              ]
-
-  const updateRequest = (updated: WorkflowRequest, nextStage?: WorkflowStage) => {
-    const saved = nextStage ? { ...updated, stage: nextStage } : updated
-    const previous = requests.find((request) => request.id === saved.id)
-    const isIssuing = previous?.stage === "issue" && saved.stage === "delivery"
-    const isReturningToStock = previous?.stage === "return" && !previous.closed && saved.closed && saved.finalDisposition === "Returned to stock"
-
-    if (isIssuing || isReturningToStock) {
-      setStockLevels((current) => {
-        const next = { ...current }
-        for (const sample of saved.samples) {
-          const quantity = isIssuing ? sample.issuedQuantity : Math.min(sample.issuedQuantity, saved.returnedQuantity)
-          next[sample.code] = Math.max(0, (next[sample.code] ?? 0) + (isIssuing ? -quantity : quantity))
-        }
-        return next
-      })
-    }
-
-    setRequests((current) => current.map((request) => request.id === saved.id ? saved : request))
-    setActiveRequestId(null)
-  }
-
-  const createRequest = () => {
-    const id = `REQ-${nextRequestNumber}`
-    setNextRequestNumber((number) => number + 1)
-    const request: WorkflowRequest = {
-      id,
-      organization: "",
-      organizationType: "Client",
-      project: "",
-      requester: "",
-      requestType: "Project sample",
-      sampleDetails: "",
-      quantity: 1,
-      purpose: "",
-      priority: "Normal",
-      requiredDate: "",
-      deliveryAddress: "",
-      assignedTo: teamMembers[0],
-      stage: "request",
-      status: "Draft",
-      samples: [],
-      availability: "Available",
-      stockLocation: "Studio Library",
-      condition: "Good",
-      issuedQuantity: 0,
-      returnBy: "",
-      issueStatus: "Not issued",
-      dispatchRequestCreated: false,
-      pickupLocation: "",
-      deliveryMethod: "Courier",
-      contactPerson: "",
-      expectedDate: "",
-      courier: "",
-      trackingNumber: "",
-      dispatchStatus: "Not dispatched",
-      receiptStatus: "Pending",
-      receivedQuantity: 0,
-      receivedCondition: "Good",
-      reviewer: reviewers[0],
-      decision: "Pending",
-      reviewComments: "",
-      followUp: "None",
-      finalApproval: false,
-      returnStatus: "Awaiting return",
-      returnedQuantity: 0,
-      returnCondition: "Good",
-      finalDisposition: "Pending",
-      stockUpdated: false,
-      closed: false,
-    }
-    setRequests((current) => [request, ...current])
-    setActiveStage("all")
-    setView("board")
-    setActiveRequestId(id)
-  }
-
-  const moveBack = (request: WorkflowRequest) => {
-    const previous = stages[Math.max(0, stagePosition[request.stage] - 1)].id
-    if (request.stage === "delivery" && request.dispatchRequestCreated) {
-      setStockLevels((current) => {
-        const next = { ...current }
-        for (const sample of request.samples) {
-          next[sample.code] = (next[sample.code] ?? 0) + sample.issuedQuantity
-        }
-        return next
-      })
-    }
-    setRequests((current) => current.map((item) => item.id === request.id
-      ? {
-          ...item,
-          stage: previous,
-          status: "In progress",
-          ...(request.stage === "delivery" ? {
-            issuedQuantity: 0,
-            issueStatus: "Not issued",
-            dispatchRequestCreated: false,
-            receivedQuantity: 0,
-            receiptStatus: "Pending",
-            samples: item.samples.map((sample) => ({ ...sample, issuedQuantity: 0 })),
-          } : {}),
-        }
-      : item))
-  }
-
-  const resetDemo = () => {
-    setRequests(createDemoRequests())
-    setStockLevels(createDemoStockLevels())
-    setSearch("")
-    setActiveStage("all")
-    setView("board")
-    setActiveRequestId(null)
-    setNextRequestNumber(2616)
-    setIsResettingDemo(false)
-    setFeedback("Demo workflow restored.")
-  }
-
-  const refreshSavedData = () => {
-    try {
-      const savedRequests = window.localStorage.getItem("archscale.samples.requests")
-      const savedStock = window.localStorage.getItem("archscale.samples.stock")
-      const savedNumber = window.localStorage.getItem("archscale.samples.nextRequest")
-      if (savedRequests !== null) setRequests(JSON.parse(savedRequests) as WorkflowRequest[])
-      if (savedStock !== null) setStockLevels(JSON.parse(savedStock) as Record<string, number>)
-      if (savedNumber !== null) setNextRequestNumber(JSON.parse(savedNumber) as number)
-      setFeedback("Saved sample workflow reloaded from this browser.")
-    } catch {
-      setFeedback("Saved workflow data could not be read; current session data remains available.")
-    }
-  }
-
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">Library</p>
-            <h1 className="mt-0.5 text-xl font-semibold tracking-tight">Swatch &amp; Sample</h1>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={refreshSavedData}
-              aria-label="Refresh saved sample requests"
-              title="Refresh saved sample requests"
-              className="inline-flex size-8 items-center justify-center rounded-md border border-input bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <RefreshCw className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={createRequest}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#f45a1e] px-3 text-xs font-medium text-white transition-colors hover:bg-[#df4c13]"
-            >
-              <Plus className="size-3.5" />
-              New sample request
-            </button>
-          </div>
-        </header>
-
-        <div className="flex shrink-0 flex-col gap-1 border-b border-border pb-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div role="group" aria-label="Request view" className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
-              <button type="button" onClick={() => setView("board")} aria-pressed={view === "board"} className={viewClass(view === "board")}>
-                <LayoutGrid aria-hidden="true" className="size-3.5" />
-                Board
-              </button>
-              <button type="button" onClick={() => setView("all")} aria-pressed={view === "all"} className={viewClass(view === "all")}>
-                <List aria-hidden="true" className="size-3.5" />
-                List
-              </button>
-            </div>
-            <label className="relative w-full sm:max-w-52">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                aria-label="Search sample requests"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search requests..."
-                className="h-7 w-full rounded-md border border-input bg-background pl-8 pr-2 text-[11px] outline-none focus:ring-2 focus:ring-ring/30"
-              />
-            </label>
-          </div>
-          <nav aria-label="Filter by workflow stage" className="flex min-w-0 items-center gap-1 overflow-x-auto">
-            <button
-              type="button"
-              onClick={() => setActiveStage("all")}
-              aria-pressed={activeStage === "all"}
-              className={navClass(activeStage === "all")}
-            >
-              All requests
-              <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] tabular-nums text-muted-foreground">
-                {requests.length}
-              </span>
-            </button>
-            {stages.map((stage) => (
-              <button
-                type="button"
-                key={stage.id}
-                onClick={() => setActiveStage(stage.id)}
-                aria-pressed={activeStage === stage.id}
-                className={navClass(activeStage === stage.id)}
-              >
-                {stage.label}
-                <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] tabular-nums text-muted-foreground">
-                  {requests.filter((request) => request.stage === stage.id).length}
-                </span>
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {view === "board" ? (
-          <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden pb-1">
-            <div className="flex h-full min-w-max items-start gap-2.5">
-              {stages.filter((stage) => activeStage === "all" || stage.id === activeStage).map((stage) => {
-                const stageRequests = visibleRequests.filter((request) => request.stage === stage.id)
-                return (
-                  <section key={stage.id} aria-label={`${stage.label} column`} className={cn("flex h-full max-h-full w-[252px] flex-col overflow-hidden rounded-md border border-border/80 sm:w-[268px]", stage.tint)}>
-                    <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-2.5 py-2">
-                      <h2 className="truncate text-[11px] font-semibold">{stage.label}</h2>
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-[10px] tabular-nums">
-                        {stageRequests.length}
-                      </span>
-                    </header>
-                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-                      {stageRequests.map((request) => (
-                        <RequestCard key={request.id} request={request} onOpen={() => setActiveRequestId(request.id)} onMoveBack={() => moveBack(request)} />
-                      ))}
-                      {stageRequests.length === 0 && (
-                        <p className="rounded border border-dashed border-border/80 bg-background/50 px-2 py-5 text-center text-[10px] text-muted-foreground">
-                          No requests in this stage
-                        </p>
-                      )}
-                    </div>
-                  </section>
-                )
-              })}
-            </div>
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card">
-            <table className="w-full min-w-[860px] border-collapse text-xs">
-              <thead className="sticky top-0 bg-slate-800 text-white">
-                <tr className="h-8 text-left text-[10px] uppercase tracking-wide text-white/80">
-                  <th className="px-3">Request</th>
-                  <th className="px-3">Organization / Project</th>
-                  {stageColumns.map((column) => <th key={column.label} className="px-3">{column.label}</th>)}
-                  <th className="px-3">Priority</th>
-                  <th className="px-3">Assigned to</th>
-                  <th className="px-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {visibleRequests.map((request) => (
-                  <tr key={request.id} className="h-12 hover:bg-muted/30">
-                    <td className="whitespace-nowrap px-3"><span className="font-medium">{request.id}</span></td>
-                    <td className="px-3"><span className="block font-medium">{request.organization || "New organization"}</span><span className="text-[10px] text-muted-foreground">{request.project || "Project not set"}</span></td>
-                    {stageColumns.map((column) => <td key={column.label} className="max-w-56 px-3">{column.render(request)}</td>)}
-                    <td className="px-3"><PriorityBadge priority={request.priority} /></td>
-                    <td className="whitespace-nowrap px-3">{request.assignedTo || "Not assigned"}</td>
-                    <td className="px-3"><button type="button" onClick={() => setActiveRequestId(request.id)} className="whitespace-nowrap rounded bg-slate-900 px-2.5 py-1.5 text-[10px] font-medium text-white hover:bg-slate-700">{request.closed ? "View closure" : stages[stagePosition[request.stage]].action}</button></td>
-                  </tr>
-                ))}
-                {visibleRequests.length === 0 && (
-                  <tr>
-                    <td colSpan={stageColumns.length + 5} className="p-8 text-center text-xs text-muted-foreground">
-                      {query
-                        ? "No requests match your search in this view."
-                        : activeStage === "all"
-                          ? "No sample requests yet. Create a request to get started."
-                          : `No requests are in ${stages[stagePosition[activeStage]].label}.`}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 text-[9px] text-muted-foreground">
-          <div><p>Demo workflow · Changes are saved in this browser.</p><p>No backend is connected.</p>{feedback && <p role="status" className="mt-1">{feedback}</p>}</div>
-          <button type="button" onClick={() => setIsResettingDemo(true)} className="rounded border border-input px-2 py-1 text-[9px] hover:bg-accent">Reset demo data</button>
-        </footer>
-      </main>
-
-      {activeRequest && (
-        <WorkflowDialog
-          key={activeRequest.id}
-          request={activeRequest}
-          stockLevels={stockLevels}
-          onClose={() => setActiveRequestId(null)}
-          onSave={updateRequest}
-        />
-      )}
-      {isResettingDemo && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsResettingDemo(false) }}><section role="alertdialog" aria-modal="true" aria-labelledby="reset-samples-title" className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-2xl"><h2 id="reset-samples-title" className="text-sm font-semibold">Reset demo workflow?</h2><p className="mt-1 text-xs text-muted-foreground">This replaces locally saved sample requests and stock with the original demo data.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setIsResettingDemo(false)} className="h-8 rounded border border-input px-3 text-xs hover:bg-accent">Cancel</button><button type="button" onClick={resetDemo} className="h-8 rounded bg-destructive px-3 text-xs font-medium text-destructive-foreground hover:bg-destructive/90">Reset demo data</button></div></section></div>}
-    </div>
-  )
-}
-
-function navClass(active: boolean) {
-  return cn(
-    "flex h-8 shrink-0 items-center whitespace-nowrap border-b-2 px-2 text-[10px] transition-colors",
-    active ? "border-primary font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-  )
-}
-
-function viewClass(active: boolean) {
-  return cn(
-    "flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-[10px] transition-colors",
-    active ? "bg-background font-semibold text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-  )
-}
-
-function PriorityBadge({ priority }: { priority: Priority }) {
-  return <span className={cn("inline-flex rounded px-1.5 py-0.5 text-[9px] font-medium", priorityStyles[priority])}>{priority}</span>
-}
-
-function RequestCard({
-  request,
-  onOpen,
-  onMoveBack,
-}: {
-  request: WorkflowRequest
-  onOpen: () => void
-  onMoveBack: () => void
-}) {
-  const stage = stages[stagePosition[request.stage]]
-  const overdue = Boolean(request.requiredDate && request.requiredDate < today && !request.closed)
-  const isComplete = request.closed
-  const stageIndex = stagePosition[request.stage]
-  const progress = isComplete ? 100 : Math.min(95, stageIndex * 25 + 10)
-  const progressText = request.stage === "request"
-    ? `0 of ${request.quantity} issued`
-    : request.stage === "issue"
-      ? `${request.issuedQuantity} of ${request.quantity} issued`
-      : request.stage === "delivery"
-        ? `${request.receivedQuantity} of ${request.issuedQuantity} received`
-        : request.stage === "review"
-          ? `${request.receivedQuantity} of ${request.issuedQuantity} reviewed`
-          : `${request.returnedQuantity} of ${request.issuedQuantity} returned`
-
-  return (
-    <article className="rounded-md border border-border bg-card p-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
-      <div className="flex items-start gap-1.5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="min-w-0 flex-1 text-[11px] font-semibold leading-4">{request.organization || "New organization"}</h3>
-            <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium", request.organizationType === "Client" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700")}>
-              {request.organizationType}
-            </span>
-          </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[10px]">
-            <span className="font-semibold">{request.id}</span>
-            <span className="text-muted-foreground">Due {formatDate(request.requiredDate)}</span>
-          </div>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" aria-label={`More actions for ${request.id}`} className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground">
-              <MoreHorizontal className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onSelect={onOpen}>Open workflow</DropdownMenuItem>
-            <DropdownMenuItem disabled={stageIndex === 0 || request.closed} onSelect={onMoveBack}>Move to previous stage</DropdownMenuItem>
-            {request.closed && <DropdownMenuItem onSelect={onOpen}>View closure details</DropdownMenuItem>}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <p className="mt-1 truncate text-[10px] text-muted-foreground">{request.project || "Project not set"}</p>
-
-      <div className="mt-2 flex items-center justify-between gap-1">
-        {overdue ? (
-          <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-medium text-rose-700">
-            <AlertTriangle className="size-3" /> {Math.max(1, Math.ceil((new Date(`${today}T12:00:00`).getTime() - new Date(`${request.requiredDate}T12:00:00`).getTime()) / 86400000))}d overdue
-          </span>
-        ) : <span className="text-[9px] text-muted-foreground">Required {formatDate(request.requiredDate)}</span>}
-        <PriorityBadge priority={request.priority} />
-      </div>
-
-      <div className="mt-2 flex min-w-0 items-center gap-2">
-        {request.samples[0] ? (
-          <div
-            role="img"
-            aria-label={`Material preview: ${request.samples[0].name}`}
-            className="relative size-10 shrink-0 overflow-hidden rounded border border-border"
-            style={{
-              backgroundColor: request.samples[0].color,
-              backgroundImage: "linear-gradient(135deg, rgb(255 255 255 / 0.55), transparent 42%, rgb(0 0 0 / 0.12)), repeating-linear-gradient(45deg, transparent 0 5px, rgb(255 255 255 / 0.16) 5px 6px)",
-            }}
-          >
-            <span className="absolute inset-x-0 bottom-0 truncate bg-black/35 px-1 text-[7px] text-white">
-              {request.samples[0].category}
-            </span>
-          </div>
-        ) : (
-          <div className="flex size-10 shrink-0 items-center justify-center rounded border border-dashed border-border bg-muted text-muted-foreground">
-            <Image aria-hidden="true" className="size-4" />
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[10px]">{request.sampleDetails || request.samples.map((sample) => sample.name).join(", ") || "Samples not selected"}</p>
-          {request.samples[0] && <p className="truncate text-[9px] text-muted-foreground">{request.samples[0].code}</p>}
-        </div>
-        <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
-      </div>
-
-      <div className="mt-2">
-        <div className="h-1 rounded-full bg-muted">
-          <div className="h-full rounded-full bg-slate-900 transition-[width] duration-300" style={{ width: `${progress}%` }} />
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-1 text-[9px] text-muted-foreground">
-          <span>{progressText}</span>
-          <span className="inline-flex items-center gap-1"><UserRound className="size-3" />{request.assignedTo}</span>
-        </div>
-      </div>
-
-      <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2">
-        <button type="button" onClick={onOpen} className="flex h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded bg-slate-900 px-2 text-[10px] font-medium text-white transition-colors hover:bg-slate-700">
-          {request.closed ? <CheckCircle2 className="size-3" /> : <ChevronRight className="size-3" />}
-          <span className="truncate">{request.closed ? "View closure" : stage.action}</span>
-        </button>
-        <span className="flex h-7 shrink-0 items-center rounded border border-border px-1.5 text-[9px] text-muted-foreground">{request.status}</span>
-      </div>
-    </article>
-  )
-}
-
-function FormField({
-  label,
-  children,
-  className,
-}: {
-  label: string
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <label className={cn("block min-w-0 space-y-1", className)}>
-      <span className="block text-[10px] font-medium text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-const controlClass = "h-8 w-full rounded border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/30"
-const textareaClass = "min-h-16 w-full resize-y rounded border border-input bg-background px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring/30"
-
-function TextControl({
+function RequestField({
   label,
   value,
   onChange,
   type = "text",
   required = false,
+  multiline = false,
+  options,
   min,
 }: {
   label: string
@@ -751,369 +129,893 @@ function TextControl({
   onChange: (value: string) => void
   type?: string
   required?: boolean
+  multiline?: boolean
+  options?: string[]
   min?: number
 }) {
   return (
-    <FormField label={label}>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} min={min} className={controlClass} />
-    </FormField>
+    <label className="block min-w-0">
+      <span className={labelClass}>{label}{required && <span className="ml-1 text-destructive">*</span>}</span>
+      {options ? (
+        <select required={required} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>
+          {options.map((option) => <option key={option}>{option}</option>)}
+        </select>
+      ) : multiline ? (
+        <textarea required={required} value={value} onChange={(event) => onChange(event.target.value)} rows={3} className={cn(inputClass, "h-auto min-h-20 resize-y py-2")} />
+      ) : (
+        <input required={required} type={type} min={min} step={type === "number" ? "1" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} />
+      )}
+    </label>
   )
 }
 
-function SelectControl({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: string[]
-  onChange: (value: string) => void
-}) {
-  return (
-    <FormField label={label}>
-      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={controlClass}>
-        {options.map((option) => <option key={option}>{option}</option>)}
-      </select>
-    </FormField>
-  )
-}
-
-function TextareaControl({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-}) {
-  return (
-    <FormField label={label}>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} className={textareaClass} />
-    </FormField>
-  )
-}
-
-function WorkflowDialog({
+function RequestForm({
   request,
-  stockLevels,
-  onClose,
-  onSave,
+  onChange,
+  onSaveDraft,
+  onSubmit,
+  onCancel,
+  error,
 }: {
-  request: WorkflowRequest
-  stockLevels: Record<string, number>
-  onClose: () => void
-  onSave: (request: WorkflowRequest, nextStage?: WorkflowStage) => void
+  request: MaterialRequest
+  onChange: (value: MaterialRequest) => void
+  onSaveDraft: () => void
+  onSubmit: () => void
+  onCancel: () => void
+  error: string
 }) {
-  const [draft, setDraft] = React.useState(request)
-  const [selectedCode, setSelectedCode] = React.useState(sampleCatalogue[0].code)
-  const [bagQuantity, setBagQuantity] = React.useState("1")
-  const [validationMessage, setValidationMessage] = React.useState("")
-  const stage = stages[stagePosition[draft.stage]]
-
-  const update = <K extends keyof WorkflowRequest,>(key: K, value: WorkflowRequest[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }))
-    setValidationMessage("")
+  const set = <K extends keyof MaterialRequest,>(key: K, value: MaterialRequest[K]) => {
+    onChange({ ...request, [key]: value })
   }
-
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose()
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose])
-
-  const addSample = () => {
-    const material = sampleCatalogue.find((item) => item.code === selectedCode)
-    const quantity = Math.max(1, Number(bagQuantity) || 1)
-    if (!material) return
-    const alreadySelected = draft.samples.find((sample) => sample.code === material.code)?.requestedQuantity ?? 0
-    if (alreadySelected + quantity > (stockLevels[material.code] ?? 0)) {
-      return setValidationMessage(`Only ${stockLevels[material.code] ?? 0} units of ${material.name} are currently available.`)
-    }
-    setDraft((current) => {
-      const existing = current.samples.find((sample) => sample.code === material.code)
-      const samples = existing
-        ? current.samples.map((sample) => sample.code === material.code
-          ? { ...sample, requestedQuantity: sample.requestedQuantity + quantity }
-          : sample)
-        : [...current.samples, { ...material, requestedQuantity: quantity, issuedQuantity: 0 }]
-      const sampleBagTotal = samples.reduce((total, sample) => total + sample.requestedQuantity, 0)
-      return {
-        ...current,
-        samples,
-        sampleDetails: samples.map((sample) => sample.name).join(", "),
-        issuedQuantity: Math.min(current.quantity, sampleBagTotal),
-      }
-    })
-    setValidationMessage("")
-  }
-
-  const removeSample = (code: string) => {
-    setDraft((current) => {
-      const samples = current.samples.filter((sample) => sample.code !== code)
-      return {
-        ...current,
-        samples,
-        sampleDetails: samples.map((sample) => sample.name).join(", "),
-      }
-    })
-    setValidationMessage("")
-  }
-
-  const advance = (nextStage: WorkflowStage, updateValues: Partial<WorkflowRequest> = {}) => {
-    onSave({ ...draft, ...updateValues }, nextStage)
-  }
-
-  const currentStageIndex = stagePosition[draft.stage]
-  const sampleBagTotal = draft.samples.reduce((total, sample) => total + sample.requestedQuantity, 0)
-  const canClose = draft.returnStatus !== "Awaiting return" && draft.finalDisposition !== "Pending" &&
-    (draft.finalDisposition !== "Returned to stock" || draft.returnedQuantity >= draft.issuedQuantity)
-
-  const actionForStage = () => {
-    if (draft.stage === "request") {
-      return <>
-        <button type="button" onClick={() => onSave({ ...draft, status: "Draft" })} className="h-8 rounded border border-input px-3 text-[11px] font-medium hover:bg-accent">Save as Draft</button>
-        <button type="button" onClick={() => advance("issue", { status: "Submitted" })} disabled={!draft.organization.trim() || !draft.project.trim() || !draft.requester.trim() || !draft.sampleDetails.trim()} className="inline-flex h-8 items-center gap-1.5 rounded bg-slate-900 px-3 text-[11px] font-medium text-white hover:bg-slate-700 disabled:pointer-events-none disabled:opacity-40"><Send className="size-3" />Submit Request</button>
-      </>
-    }
-    if (draft.stage === "issue") {
-      return <>
-        <button type="button" onClick={() => onSave(draft)} className="h-8 rounded border border-input px-3 text-[11px] font-medium hover:bg-accent">Save progress</button>
-        <button type="button" onClick={() => {
-          if (draft.samples.length === 0) return setValidationMessage("Add at least one catalogue sample to the Sample Bag.")
-          if (draft.availability === "Unavailable") return setValidationMessage("Select an available sample or update its stock availability before issuing.")
-          const issued = draft.issuedQuantity || Math.min(draft.quantity, sampleBagTotal)
-          if (issued > draft.quantity || issued > sampleBagTotal) return setValidationMessage("Issued quantity cannot exceed the request or the Sample Bag quantity.")
-          let remainingToIssue = issued
-          const issuedSamples = draft.samples.map((sample) => {
-            const issuedFromLine = Math.min(sample.requestedQuantity, remainingToIssue)
-            remainingToIssue -= issuedFromLine
-            return { ...sample, issuedQuantity: issuedFromLine }
-          })
-          const unavailableSample = issuedSamples.find((sample) => sample.issuedQuantity > (stockLevels[sample.code] ?? 0))
-          if (unavailableSample) return setValidationMessage(`Only ${stockLevels[unavailableSample.code] ?? 0} units of ${unavailableSample.name} remain in stock.`)
-          advance("delivery", {
-            issuedQuantity: issued,
-            issueStatus: issued < draft.quantity ? "Partial" : "Issued",
-            dispatchRequestCreated: true,
-            samples: issuedSamples,
-            status: "Dispatch requested",
-          })
-        }} disabled={draft.availability === "Unavailable"} className="inline-flex h-8 items-center gap-1.5 rounded bg-slate-900 px-3 text-[11px] font-medium text-white hover:bg-slate-700 disabled:pointer-events-none disabled:opacity-40"><Package className="size-3" />Reserve &amp; create dispatch</button>
-      </>
-    }
-    if (draft.stage === "delivery") {
-      return <>
-        <button type="button" onClick={() => onSave(draft)} className="h-8 rounded border border-input px-3 text-[11px] font-medium hover:bg-accent">Save delivery</button>
-        <button type="button" onClick={() => {
-          if (draft.receiptStatus !== "Received") return setValidationMessage("Set Receipt Status to Received before confirming delivery.")
-          if (draft.receivedQuantity < 1 || draft.receivedQuantity > draft.issuedQuantity) return setValidationMessage("Received quantity must be between 1 and the issued quantity.")
-          advance("review", { dispatchStatus: "Delivered", status: "Received" })
-        }} className="inline-flex h-8 items-center gap-1.5 rounded bg-slate-900 px-3 text-[11px] font-medium text-white hover:bg-slate-700"><Truck className="size-3" />Confirm receipt</button>
-      </>
-    }
-    if (draft.stage === "review") {
-      return <>
-        <button type="button" onClick={() => onSave(draft)} className="h-8 rounded border border-input px-3 text-[11px] font-medium hover:bg-accent">Save review</button>
-        <button type="button" onClick={() => {
-          if (draft.decision !== "Approved" || !draft.finalApproval) return setValidationMessage("Record an Approved decision and confirm final approval to continue.")
-          advance("return", { status: "Approved" })
-        }} className="inline-flex h-8 items-center gap-1.5 rounded bg-slate-900 px-3 text-[11px] font-medium text-white hover:bg-slate-700"><ClipboardCheck className="size-3" />Approve &amp; continue</button>
-      </>
-    }
-    return <>
-      <button type="button" onClick={() => onSave(draft)} className="h-8 rounded border border-input px-3 text-[11px] font-medium hover:bg-accent">Save return</button>
-      <button type="button" onClick={() => {
-        if (!canClose) return setValidationMessage("Verify the return status, quantity, and final disposition before closing.")
-        onSave({ ...draft, closed: true, status: "Closed", stockUpdated: draft.finalDisposition === "Returned to stock" })
-      }} disabled={!canClose} className="inline-flex h-8 items-center gap-1.5 rounded bg-slate-900 px-3 text-[11px] font-medium text-white hover:bg-slate-700 disabled:pointer-events-none disabled:opacity-40"><Check className="size-3" />Complete &amp; close</button>
-    </>
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3 backdrop-blur-[2px] sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="workflow-dialog-title" className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl">
-        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-3 sm:p-4">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{stage.label} · {draft.id}</p>
-            <h2 id="workflow-dialog-title" className="mt-1 truncate text-base font-semibold">{draft.organization || "New sample request"}</h2>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{draft.project || "Project details required"}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel() }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="sample-request-form-title" className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-primary">{request.id}</p>
+            <h2 id="sample-request-form-title" className="mt-1 text-lg font-semibold">{request.status === "Draft" ? "Request details" : "New sample request"}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Save a draft to continue later, or submit it for coordinator review.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close workflow" className="flex size-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><X className="size-4" /></button>
+          <button type="button" aria-label="Close request form" onClick={onCancel} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"><X className="size-4" /></button>
         </header>
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 sm:p-4">
-          <div className="mb-4 grid grid-cols-5 gap-1" aria-label="Workflow progress">
-            {stages.map((item, index) => (
-              <div key={item.id} className="min-w-0">
-                <div className={cn("h-1 rounded-full", index <= currentStageIndex ? "bg-primary" : "bg-muted")} />
-                <p className={cn("mt-1 hidden truncate text-[9px] sm:block", index === currentStageIndex ? "font-semibold text-foreground" : "text-muted-foreground")}>{item.label}</p>
+        <form id="sample-request-form" className="min-h-0 flex-1 overflow-y-auto p-5" onSubmit={(event) => { event.preventDefault(); onSubmit() }}>
+          <div className="space-y-6">
+            <section>
+              <h3 className="mb-3 text-sm font-semibold">Request information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <RequestField label="Project" value={request.project} onChange={(value) => set("project", value)} required />
+                <RequestField label="Requester" value={request.requester} onChange={(value) => set("requester", value)} required />
+                <RequestField label="Request type" value={request.requestType} options={requestTypes} onChange={(value) => set("requestType", value)} required />
+                <RequestField label="Priority" value={request.priority} options={priorities} onChange={(value) => set("priority", value as MaterialRequest["priority"])} />
               </div>
-            ))}
+            </section>
+            <section>
+              <h3 className="mb-3 text-sm font-semibold">Sample information</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2"><RequestField label="Sample details" value={request.sampleDetails} onChange={(value) => set("sampleDetails", value)} required multiline /></div>
+                <RequestField label="Quantity" type="number" min={1} value={request.quantity} onChange={(value) => set("quantity", Number(value))} required />
+                <RequestField label="Purpose" value={request.purpose} onChange={(value) => set("purpose", value)} multiline />
+              </div>
+            </section>
+            <section>
+              <h3 className="mb-3 text-sm font-semibold">Request requirements</h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <RequestField label="Required date" type="date" value={request.requiredDate} onChange={(value) => set("requiredDate", value)} required />
+                <RequestField label="Assigned coordinator" value={request.assignedCoordinator} onChange={(value) => set("assignedCoordinator", value)} required />
+                <div className="sm:col-span-2"><RequestField label="Delivery address" value={request.deliveryAddress} onChange={(value) => set("deliveryAddress", value)} required multiline /></div>
+              </div>
+            </section>
           </div>
-
-          {draft.stage === "request" && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextControl label="Organization / Client / Studio" value={draft.organization} onChange={(value) => update("organization", value)} required />
-              <SelectControl label="Organization type" value={draft.organizationType} options={["Client", "Studio"]} onChange={(value) => update("organizationType", value as OrganizationType)} />
-              <TextControl label="Project" value={draft.project} onChange={(value) => update("project", value)} required />
-              <TextControl label="Requester" value={draft.requester} onChange={(value) => update("requester", value)} required />
-              <section className="space-y-2 rounded-md border border-border p-3 sm:col-span-2">
-                <div>
-                  <h3 className="text-xs font-semibold">Requested samples</h3>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">Choose catalogue samples to add them to this request.</p>
-                </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_88px_auto]">
-                  <select aria-label="Catalogue sample" value={selectedCode} onChange={(event) => setSelectedCode(event.target.value)} className={controlClass}>
-                    {sampleCatalogue.map((sample) => <option key={sample.code} value={sample.code}>{sample.name} · {sample.code} · {stockLevels[sample.code] ?? 0} available</option>)}
-                  </select>
-                  <input aria-label="Sample quantity" type="number" min="1" value={bagQuantity} onChange={(event) => setBagQuantity(event.target.value)} className={controlClass} />
-                  <button type="button" onClick={addSample} className="inline-flex h-8 items-center justify-center gap-1 rounded border border-input px-2 text-[10px] font-medium hover:bg-accent"><Plus className="size-3" />Add sample</button>
-                </div>
-                <div className="divide-y divide-border">
-                  {draft.samples.map((sample) => (
-                    <div key={sample.code} className="flex items-center gap-2 py-2 text-[10px]">
-                      <span className="size-7 shrink-0 rounded border border-border" style={{ backgroundColor: sample.color }} />
-                      <span className="min-w-0 flex-1 truncate">{sample.name} <span className="text-muted-foreground">{sample.code}</span></span>
-                      <span className="text-muted-foreground">Qty {sample.requestedQuantity}</span>
-                      <button type="button" aria-label={`Remove ${sample.name}`} onClick={() => removeSample(sample.code)} className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"><X className="size-3" /></button>
-                    </div>
-                  ))}
-                  {draft.samples.length === 0 && <p className="py-2 text-[10px] text-muted-foreground">No samples selected. Choose a catalogue sample above.</p>}
-                </div>
-              </section>
-              <TextControl label="Quantity" type="number" min={1} value={draft.quantity} onChange={(value) => update("quantity", Math.max(1, Number(value) || 1))} required />
-              <SelectControl label="Request Type" value={draft.requestType} options={["Project sample", "Client presentation", "Mock-up", "Replacement"]} onChange={(value) => update("requestType", value)} />
-              <SelectControl label="Priority" value={draft.priority} options={["Urgent", "High", "Normal", "Low"]} onChange={(value) => update("priority", value as Priority)} />
-              <SelectControl label="Assigned To" value={draft.assignedTo} options={teamMembers} onChange={(value) => update("assignedTo", value)} />
-              <SelectControl label="Status" value={draft.status} options={["Draft", "Submitted", "In review"]} onChange={(value) => update("status", value)} />
-              <TextControl label="Required date" type="date" value={draft.requiredDate} onChange={(value) => update("requiredDate", value)} required />
-              <TextareaControl label="Purpose" value={draft.purpose} onChange={(value) => update("purpose", value)} />
-              <TextareaControl label="Delivery address" value={draft.deliveryAddress} onChange={(value) => update("deliveryAddress", value)} />
-            </div>
-          )}
-
-          {draft.stage === "issue" && (
-            <div className="space-y-4">
-              <section className="rounded-md border border-border p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div><h3 className="text-xs font-semibold">Sample Bag</h3><p className="mt-0.5 text-[10px] text-muted-foreground">Select catalogue materials and quantities for this request.</p></div>
-                  <span className="rounded bg-muted px-2 py-1 text-[10px]">{sampleBagTotal} requested</span>
-                </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_88px_auto]">
-                  <select aria-label="Catalogue sample" value={selectedCode} onChange={(event) => setSelectedCode(event.target.value)} className={controlClass}>
-                    {sampleCatalogue.map((sample) => <option key={sample.code} value={sample.code}>{sample.name} · {sample.code} · {stockLevels[sample.code] ?? 0} available</option>)}
-                  </select>
-                  <input aria-label="Sample bag quantity" type="number" min="1" value={bagQuantity} onChange={(event) => setBagQuantity(event.target.value)} className={controlClass} />
-                  <button type="button" onClick={addSample} className="inline-flex h-8 items-center justify-center gap-1 rounded border border-input px-2 text-[10px] font-medium hover:bg-accent"><Plus className="size-3" />Add sample</button>
-                </div>
-                <div className="mt-2 divide-y divide-border">
-                  {draft.samples.map((sample) => (
-                    <div key={sample.code} className="flex items-center gap-2 py-2 text-[10px]">
-                      <span className="size-5 shrink-0 rounded border border-border" style={{ backgroundColor: sample.color }} />
-                      <span className="min-w-0 flex-1 truncate">{sample.name} <span className="text-muted-foreground">{sample.code}</span></span>
-                      <label className="flex items-center gap-1 text-muted-foreground">Qty <input type="number" min="1" value={sample.requestedQuantity} onChange={(event) => update("samples", draft.samples.map((item) => item.code === sample.code ? { ...item, requestedQuantity: Math.max(1, Number(event.target.value) || 1) } : item))} className="h-7 w-14 rounded border border-input bg-background px-1 text-foreground" /></label>
-                      <button type="button" aria-label={`Remove ${sample.name}`} onClick={() => removeSample(sample.code)} className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"><X className="size-3" /></button>
-                    </div>
-                  ))}
-                  {draft.samples.length === 0 && <p className="py-3 text-center text-[10px] text-muted-foreground">No samples in the bag yet.</p>}
-                </div>
-              </section>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <SelectControl label="Availability" value={draft.availability} options={["Available", "Partial", "Unavailable"]} onChange={(value) => update("availability", value)} />
-                <SelectControl label="Stock Location" value={draft.stockLocation} options={[...new Set(sampleCatalogue.map((sample) => sample.location))]} onChange={(value) => update("stockLocation", value)} />
-                <SelectControl label="Condition" value={draft.condition} options={["Good", "New", "Damaged", "Needs inspection"]} onChange={(value) => update("condition", value)} />
-                <SelectControl label="Issue Status" value={draft.issueStatus} options={["Not issued", "Reserved", "Issued", "Partial"]} onChange={(value) => update("issueStatus", value)} />
-                <TextControl label="Issued quantity" type="number" min={0} value={draft.issuedQuantity} onChange={(value) => update("issuedQuantity", Math.max(0, Number(value) || 0))} />
-                <TextControl label="Return date" type="date" value={draft.returnBy} onChange={(value) => update("returnBy", value)} />
-              </div>
-              <div className="flex items-center gap-2 rounded bg-muted/50 px-3 py-2 text-[10px] text-muted-foreground">
-                <Package className="size-3.5 shrink-0" /> Stock is checked against the local catalogue preview. Reserve &amp; create dispatch records the issue in this page session.
-              </div>
-            </div>
-          )}
-
-          {draft.stage === "delivery" && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextControl label="Pickup location" value={draft.pickupLocation} onChange={(value) => update("pickupLocation", value)} />
-              <SelectControl label="Delivery Method" value={draft.deliveryMethod} options={["Courier", "Studio pickup", "Project delivery", "Internal transfer"]} onChange={(value) => update("deliveryMethod", value)} />
-              <TextareaControl label="Delivery address" value={draft.deliveryAddress} onChange={(value) => update("deliveryAddress", value)} />
-              <TextControl label="Contact person" value={draft.contactPerson} onChange={(value) => update("contactPerson", value)} />
-              <TextControl label="Expected date" type="date" value={draft.expectedDate} onChange={(value) => update("expectedDate", value)} />
-              {draft.deliveryMethod === "Courier" && <>
-                <TextControl label="Courier" value={draft.courier} onChange={(value) => update("courier", value)} />
-                <TextControl label="Tracking details" value={draft.trackingNumber} onChange={(value) => update("trackingNumber", value)} />
-              </>}
-              <SelectControl label="Dispatch Status" value={draft.dispatchStatus} options={["Not dispatched", "Ready for pickup", "In transit", "Delivered", "Delivery exception"]} onChange={(value) => update("dispatchStatus", value)} />
-              <SelectControl label="Receipt Status" value={draft.receiptStatus} options={["Pending", "Received", "Partially received", "Rejected"]} onChange={(value) => update("receiptStatus", value)} />
-              <TextControl label="Received quantity" type="number" min={0} value={draft.receivedQuantity} onChange={(value) => update("receivedQuantity", Math.max(0, Number(value) || 0))} />
-              <SelectControl label="Received condition" value={draft.receivedCondition} options={["Good", "Damaged", "Incomplete", "Needs inspection"]} onChange={(value) => update("receivedCondition", value)} />
-              {draft.dispatchRequestCreated && <p className="flex items-center gap-1.5 rounded bg-emerald-50 px-3 py-2 text-[10px] text-emerald-800 sm:col-span-2"><CheckCircle2 className="size-3.5" /> Dispatch request created locally · {draft.trackingNumber || "Tracking not assigned"}</p>}
-            </div>
-          )}
-
-          {draft.stage === "review" && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextControl label="Project" value={draft.project} onChange={(value) => update("project", value)} />
-              <SelectControl label="Reviewer" value={draft.reviewer} options={reviewers} onChange={(value) => update("reviewer", value)} />
-              <div className="rounded border border-border p-2.5 sm:col-span-2">
-                <p className="mb-2 text-[10px] font-medium text-muted-foreground">Samples for review</p>
-                <div className="flex flex-wrap gap-2">
-                  {draft.samples.map((sample) => <span key={sample.code} className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-[10px]"><span className="size-3 rounded-sm" style={{ backgroundColor: sample.color }} />{sample.name} · {sample.issuedQuantity} issued</span>)}
-                </div>
-              </div>
-              <SelectControl label="Decision" value={draft.decision} options={["Pending", "Approved", "Revise", "Replace", "Rejected"]} onChange={(value) => update("decision", value)} />
-              <SelectControl label="Follow-up" value={draft.followUp} options={["None", "Revision required", "Replacement required", "Resubmit for review"]} onChange={(value) => update("followUp", value)} />
-              <TextareaControl label="Comments" value={draft.reviewComments} onChange={(value) => update("reviewComments", value)} />
-              <FormField label="Final approval">
-                <select aria-label="Final approval" value={draft.finalApproval ? "Approved" : "Awaiting approval"} onChange={(event) => update("finalApproval", event.target.value === "Approved")} className={controlClass}>
-                  <option>Awaiting approval</option><option>Approved</option>
-                </select>
-              </FormField>
-            </div>
-          )}
-
-          {draft.stage === "return" && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-muted/30 p-3 text-[10px] sm:grid-cols-4">
-                <div><p className="text-muted-foreground">Issued</p><p className="mt-1 font-semibold">{draft.issuedQuantity}</p></div>
-                <div><p className="text-muted-foreground">Received</p><p className="mt-1 font-semibold">{draft.receivedQuantity}</p></div>
-                <div><p className="text-muted-foreground">Return due</p><p className="mt-1 font-semibold">{formatDate(draft.returnBy)}</p></div>
-                <div><p className="text-muted-foreground">Stock update</p><p className="mt-1 font-semibold">{draft.stockUpdated ? "Updated" : "Pending"}</p></div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <SelectControl label="Return Status" value={draft.returnStatus} options={["Awaiting return", "Return arranged", "In transit", "Received", "Partially received", "Not returned"]} onChange={(value) => update("returnStatus", value)} />
-                <SelectControl label="Condition" value={draft.returnCondition} options={["Good", "Damaged", "Needs inspection", "Not applicable"]} onChange={(value) => update("returnCondition", value)} />
-                <TextControl label="Returned quantity" type="number" min={0} value={draft.returnedQuantity} onChange={(value) => update("returnedQuantity", Math.max(0, Number(value) || 0))} />
-                <SelectControl label="Final Disposition" value={draft.finalDisposition} options={["Pending", "Returned to stock", "Damaged", "Lost", "Retained", "Consumed", "Converted"]} onChange={(value) => update("finalDisposition", value)} />
-              </div>
-              {draft.returnStatus === "Received" && draft.finalDisposition === "Returned to stock" && draft.returnedQuantity >= draft.issuedQuantity && (
-                <p className="flex items-center gap-1.5 rounded bg-emerald-50 px-3 py-2 text-[10px] text-emerald-800"><CheckCircle2 className="size-3.5" />All issued quantities are accounted for. Stock will be updated when this request is closed.</p>
-              )}
-              {draft.finalDisposition !== "Pending" && draft.finalDisposition !== "Returned to stock" && (
-                <p className="rounded bg-amber-50 px-3 py-2 text-[10px] text-amber-800">Disposition recorded as {draft.finalDisposition}. Confirm the returned quantity before closing.</p>
-              )}
-            </div>
-          )}
-
-          {validationMessage && <p role="alert" className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-800">{validationMessage}</p>}
-        </div>
-
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border p-3 sm:px-4">
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            {draft.stage === "return" ? <RotateCcw className="size-3.5" /> : draft.stage === "delivery" ? <Truck className="size-3.5" /> : draft.stage === "review" ? <ClipboardCheck className="size-3.5" /> : <Package className="size-3.5" />}
-            Stage {currentStageIndex + 1} of 5
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button type="button" onClick={onClose} className="h-8 rounded border border-input px-3 text-[11px] font-medium hover:bg-accent">Cancel</button>
-            {actionForStage()}
+          {error && <p role="alert" className="mt-5 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+        </form>
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+          <button type="button" onClick={onCancel} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Cancel</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onSaveDraft} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Save Draft</button>
+            <button type="submit" form="sample-request-form" className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"><Send className="size-4" />Submit Request</button>
           </div>
         </footer>
       </section>
     </div>
   )
+}
+
+export function SwatchSamplePage() {
+  const [requests, setRequests] = usePersistentState<MaterialRequest[]>(requestsStorageKey, [])
+  const [search, setSearch] = React.useState("")
+  const [statusFilter, setStatusFilter] = React.useState<(typeof statusFilters)[number]>("All")
+  const [editing, setEditing] = React.useState<MaterialRequest | null>(null)
+  const [selected, setSelected] = React.useState<MaterialRequest | null>(null)
+  const [formError, setFormError] = React.useState("")
+  const [feedback, setFeedback] = React.useState("")
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setEditing(null)
+        setSelected(null)
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+
+  const visibleRequests = requests.filter((request) => {
+    const matchesStatus = statusFilter === "All" || request.status === statusFilter
+    const query = search.trim().toLowerCase()
+    const matchesSearch = !query || [
+      request.id,
+      request.project,
+      request.requester,
+      request.requestType,
+      request.sampleDetails,
+      request.assignedCoordinator,
+    ].join(" ").toLowerCase().includes(query)
+    return matchesStatus && matchesSearch
+  })
+
+  const startNewRequest = () => {
+    setFormError("")
+    setEditing(emptyRequest(createRequestId(requests)))
+  }
+
+  const saveDraft = () => {
+    if (!editing) return
+    const saved = { ...editing, status: "Draft" as const }
+    setRequests((current) => current.some((request) => request.id === saved.id)
+      ? current.map((request) => request.id === saved.id ? saved : request)
+      : [saved, ...current])
+    setEditing(null)
+    setFormError("")
+    setFeedback(`${saved.id} saved as a draft.`)
+  }
+
+  const submitRequest = () => {
+    if (!editing) return
+    const validation = validateRequest(editing)
+    if (validation) {
+      setFormError(validation)
+      return
+    }
+    const submittedAt = new Date().toISOString()
+    const submitted: MaterialRequest = { ...editing, status: "Submitted", submittedAt }
+    setRequests((current) => current.some((request) => request.id === submitted.id)
+      ? current.map((request) => request.id === submitted.id ? submitted : request)
+      : [submitted, ...current])
+    setEditing(null)
+    setFormError("")
+    setFeedback(`${submitted.id} submitted to ${submitted.assignedCoordinator} for review.`)
+  }
+
+  const confirmReady = (request: MaterialRequest) => {
+    const currentRequest = requests.find((item) => item.id === request.id)
+    if (!currentRequest || currentRequest.status !== "Submitted") {
+      setFeedback("This request is no longer available for coordinator review.")
+      return
+    }
+
+    const ready: MaterialRequest = {
+      ...currentRequest,
+      status: "Ready for Select & Issue",
+      readyAt: new Date().toISOString(),
+    }
+    const nextRequests = requests.map((item) => item.id === ready.id ? ready : item)
+    const previousRequests = window.localStorage.getItem(requestsStorageKey)
+    const previousHandoff = window.localStorage.getItem(stage2RequestStorageKey)
+    try {
+      window.localStorage.setItem(requestsStorageKey, JSON.stringify(nextRequests))
+      window.localStorage.setItem(stage2RequestStorageKey, JSON.stringify(ready))
+    } catch {
+      try {
+        if (previousRequests === null) window.localStorage.removeItem(requestsStorageKey)
+        else window.localStorage.setItem(requestsStorageKey, previousRequests)
+        if (previousHandoff === null) window.localStorage.removeItem(stage2RequestStorageKey)
+        else window.localStorage.setItem(stage2RequestStorageKey, previousHandoff)
+      } catch {
+        setFeedback("The handoff could not be saved, and browser storage could not be restored.")
+        return
+      }
+      setFeedback("The handoff could not be saved because browser storage is unavailable.")
+      return
+    }
+    setRequests(nextRequests)
+    setSelected(ready)
+    window.dispatchEvent(new CustomEvent("archscale:navigate", {
+      detail: { activeRailId: "library", activeItem: "Select & Issue" },
+    }))
+  }
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">Stage 1</p>
+          <h1 className="mt-1 text-xl font-semibold">Sample Requests</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Create requests, track submissions, and review requests assigned to a coordinator.</p>
+        </div>
+        <button type="button" onClick={startNewRequest} className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"><Plus className="size-4" />New Request</button>
+      </header>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+        {statusFilters.map((status) => {
+          const count = status === "All" ? requests.length : requests.filter((request) => request.status === status).length
+          return (
+            <button key={status} type="button" onClick={() => setStatusFilter(status)} className={cn("inline-flex h-8 items-center gap-2 rounded-full border px-3 text-xs font-medium transition-colors", statusFilter === status ? "border-slate-900 bg-slate-900 text-white" : "border-border bg-background text-foreground hover:bg-muted")}>
+              {status}<span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", statusFilter === status ? "bg-white/15" : "bg-muted")}>{count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <section className="min-h-0 flex-1 overflow-auto p-5">
+        <div className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-3">
+            <label className="relative block w-full max-w-sm">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input aria-label="Search requests" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search request, project, requester..." className={cn(inputClass, "pl-9")} />
+            </label>
+            <span className="text-xs text-muted-foreground">{visibleRequests.length} of {requests.length} requests</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[850px] border-collapse text-sm">
+              <thead className="bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Request</th>
+                  <th className="px-4 py-3 font-semibold">Project</th>
+                  <th className="px-4 py-3 font-semibold">Sample details</th>
+                  <th className="px-4 py-3 font-semibold">Requester</th>
+                  <th className="px-4 py-3 font-semibold">Coordinator</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Required date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {visibleRequests.map((request) => (
+                  <tr key={request.id} tabIndex={0} role="button" onClick={() => setSelected(request)} onKeyDown={(event) => { if (event.key === "Enter") setSelected(request) }} className="cursor-pointer hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                    <td className="px-4 py-4"><span className="font-semibold">{request.id}</span><span className={cn("mt-1 block w-fit rounded px-2 py-0.5 text-[10px] font-medium uppercase", request.priority === "Urgent" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600")}>{request.priority}</span></td>
+                    <td className="px-4 py-4">{request.project || "—"}</td>
+                    <td className="max-w-56 truncate px-4 py-4">{request.sampleDetails || "Details not entered"}<span className="block text-xs text-muted-foreground">{request.quantity} requested</span></td>
+                    <td className="px-4 py-4">{request.requester || "—"}</td>
+                    <td className="px-4 py-4">{request.assignedCoordinator || "—"}</td>
+                    <td className="px-4 py-4"><span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium", statusStyle(request.status))}>{request.status === "Draft" ? <Edit2 className="size-3" /> : request.status === "Submitted" ? <Clock3 className="size-3" /> : <CheckCircle2 className="size-3" />}{request.status}</span></td>
+                    <td className="whitespace-nowrap px-4 py-4 text-muted-foreground">{formatRequestDate(request.requiredDate)}</td>
+                  </tr>
+                ))}
+                {visibleRequests.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-14 text-center"><p className="font-medium">{requests.length ? "No requests match these filters" : "No sample requests yet"}</p><p className="mt-1 text-sm text-muted-foreground">{requests.length ? "Try a different search or status." : "Create a request or save a draft to begin."}</p>{!requests.length && <button type="button" onClick={startNewRequest} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"><Plus className="size-4" />New Request</button>}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {feedback && <p role="status" className="mt-3 text-sm text-muted-foreground">{feedback}</p>}
+      </section>
+
+      {editing && (
+        <RequestForm
+          request={editing}
+          onChange={(value) => { setEditing(value); setFormError("") }}
+          onSaveDraft={saveDraft}
+          onSubmit={submitRequest}
+          onCancel={() => { setEditing(null); setFormError("") }}
+          error={formError}
+        />
+      )}
+
+      {selected && (
+        <RequestDetails
+          request={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => {
+            if (selected.status !== "Draft") return
+            setEditing(selected)
+            setSelected(null)
+            setFormError("")
+          }}
+          onConfirmReady={() => confirmReady(selected)}
+        />
+      )}
+    </div>
+  )
+}
+
+function RequestDetails({
+  request,
+  onClose,
+  onEdit,
+  onConfirmReady,
+}: {
+  request: MaterialRequest
+  onClose: () => void
+  onEdit: () => void
+  onConfirmReady: () => void
+}) {
+  const isDraft = request.status === "Draft"
+  const isReviewable = request.status === "Submitted"
+  const [reviewError, setReviewError] = React.useState("")
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="sample-request-details-title" className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2"><h2 id="sample-request-details-title" className="text-lg font-semibold">{request.id}</h2><span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", statusStyle(request.status))}>{request.status}</span></div>
+            <p className="mt-1 text-sm text-muted-foreground">{request.project || "Project not set"} · Requested by {request.requester || "not set"}</p>
+          </div>
+          <button type="button" aria-label="Close request details" onClick={onClose} className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"><X className="size-4" /></button>
+        </header>
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5">
+          <section>
+            <h3 className="mb-3 text-sm font-semibold">Request information</h3>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+              {[
+                ["Project", request.project],
+                ["Requester", request.requester],
+                ["Request type", request.requestType],
+                ["Sample details", request.sampleDetails],
+                ["Quantity", String(request.quantity)],
+                ["Purpose", request.purpose],
+                ["Priority", request.priority],
+                ["Required date", formatRequestDate(request.requiredDate)],
+                ["Delivery address", request.deliveryAddress],
+                ["Assigned coordinator", request.assignedCoordinator],
+                ["Created", new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(request.createdAt))],
+                ["Submitted", request.submittedAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(request.submittedAt)) : "—"],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{value || "—"}</dd></div>
+              ))}
+            </dl>
+          </section>
+          {isReviewable && (
+            <section className="rounded-lg border border-border bg-muted/30 p-4">
+              <h3 className="text-sm font-semibold">Coordinator review</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Assigned coordinator: {request.assignedCoordinator}. Confirm when this request is ready to proceed to Select &amp; Issue.</p>
+              {reviewError && <p role="alert" className="mt-3 text-sm text-rose-700">{reviewError}</p>}
+              <button type="button" onClick={() => {
+                const validation = validateRequest(request)
+                if (validation) {
+                  setReviewError(`Request details need attention before proceeding: ${validation}`)
+                  return
+                }
+                onConfirmReady()
+              }} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"><CheckCircle2 className="size-4" />Confirm ready for Select &amp; Issue<ArrowRight className="size-4" /></button>
+            </section>
+          )}
+          {request.status === "Ready for Select & Issue" && (
+            <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Coordinator confirmed this request ready for Select &amp; Issue on {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(request.readyAt ?? request.createdAt))}.</p>
+          )}
+        </div>
+        <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-3">
+          <button type="button" onClick={onClose} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Close</button>
+          {isDraft && <button type="button" onClick={onEdit} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"><Edit2 className="size-4" />Edit draft</button>}
+        </footer>
+      </section>
+    </div>
+  )
+}
+
+export function SelectIssuePage() {
+  const [requests] = usePersistentState<MaterialRequest[]>(requestsStorageKey, [])
+  const [items] = usePersistentState<InventoryItem[]>(inventoryStorageKey, initialItems)
+  const [workflows, setWorkflows] = usePersistentState<Stage2Workflow[]>(stage2WorkflowsStorageKey, [])
+  const [dispatches, setDispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
+  const [activeRequestId, setActiveRequestId] = React.useState("")
+  const [section, setSection] = React.useState<"Catalogue" | "Sample Bag" | "Sample Issue">("Catalogue")
+  const [search, setSearch] = React.useState("")
+  const [error, setError] = React.useState("")
+  const [feedback, setFeedback] = React.useState("")
+
+  const eligibleRequests = requests.filter((request) => request.status === "Ready for Select & Issue")
+  const activeWorkflow = workflows.find((workflow) => workflow.request.id === activeRequestId)
+  const activeRequest = eligibleRequests.find((request) => request.id === activeRequestId)
+    ?? activeWorkflow?.request
+  const query = search.trim().toLowerCase()
+  const catalogue = items.filter((item) =>
+    item.isSample && (!query || `${item.name} ${item.code} ${item.category} ${item.finish} ${item.size}`.toLowerCase().includes(query))
+  )
+
+  const reservedQuantityFor = (itemId: string) => workflows.reduce((sum, workflow) =>
+    sum + workflow.samples.reduce((lineSum, line) =>
+      line.itemId === itemId && line.reservedAt ? lineSum + line.reservedQuantity : lineSum, 0), 0)
+
+  const availableQuantityFor = (item: InventoryItem) =>
+    Math.max(0, item.stock - reservedQuantityFor(item.id))
+
+  const persistWorkflows = (next: Stage2Workflow[], message: string) => {
+    try {
+      window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(next))
+    } catch {
+      setError("Stage 2 changes could not be saved in this browser.")
+      return false
+    }
+    setWorkflows(next)
+    setError("")
+    setFeedback(message)
+    return true
+  }
+
+  const openRequest = (request: MaterialRequest) => {
+    setActiveRequestId(request.id)
+    setSection("Catalogue")
+    setSearch("")
+    setError("")
+    setFeedback("")
+  }
+
+  const updateLine = (itemId: string, update: Partial<Stage2SampleLine>) => {
+    if (!activeWorkflow || activeWorkflow.status !== "selection") return
+    const next = workflows.map((workflow) => workflow.request.id === activeWorkflow.request.id
+      ? { ...workflow, samples: workflow.samples.map((line) => line.itemId === itemId ? { ...line, ...update } : line) }
+      : workflow)
+    persistWorkflows(next, "")
+  }
+
+  const addSample = (item: InventoryItem) => {
+    if (!activeRequest || (activeWorkflow && activeWorkflow.status !== "selection")) return
+    const workflow = activeWorkflow ?? {
+      request: activeRequest,
+      samples: [],
+      status: "selection" as const,
+      createdAt: new Date().toISOString(),
+    }
+    const existing = workflow.samples.find((line) => line.itemId === item.id)
+    if (existing) {
+      setError("This sample is already in the Sample Bag. Update its quantity there.")
+      return
+    }
+    if (workflow.samples.reduce((sum, line) => sum + line.selectedQuantity, 0) + 1 > activeRequest.quantity) {
+      setError(`The Sample Bag cannot exceed the request quantity of ${activeRequest.quantity}.`)
+      return
+    }
+    const line: Stage2SampleLine = {
+      itemId: item.id,
+      code: item.code,
+      name: item.name,
+      category: item.category,
+      finish: item.finish,
+      size: item.size,
+      selectedQuantity: 1,
+      stockLocation: getInventoryLocation(item),
+      reservedQuantity: 0,
+      issuedQuantity: 0,
+      condition: "",
+      issueStatus: "",
+    }
+    const nextWorkflow = { ...workflow, samples: [...workflow.samples, line] }
+    const next = activeWorkflow
+      ? workflows.map((entry) => entry.request.id === activeRequest.id ? nextWorkflow : entry)
+      : [nextWorkflow, ...workflows]
+    if (persistWorkflows(next, `${item.name} added to the Sample Bag.`)) setSection("Sample Bag")
+  }
+
+  const reserveSamples = () => {
+    if (!activeWorkflow || activeWorkflow.status !== "selection" || activeWorkflow.samples.length === 0) return
+    const totalSelected = activeWorkflow.samples.reduce((sum, line) => sum + line.selectedQuantity, 0)
+    if (totalSelected > activeWorkflow.request.quantity) {
+      setError(`Selected quantity cannot exceed the request quantity of ${activeWorkflow.request.quantity}.`)
+      return
+    }
+    const insufficient = activeWorkflow.samples.find((line) => {
+      const item = items.find((entry) => entry.id === line.itemId)
+      return !item || line.selectedQuantity < 1 || line.selectedQuantity > availableQuantityFor(item)
+    })
+    if (insufficient) {
+      setError(`${insufficient.name} does not have enough available stock. Update the Sample Bag quantities and try again.`)
+      return
+    }
+    const nextWorkflow: Stage2Workflow = {
+      ...activeWorkflow,
+      status: "reserved",
+      reservedAt: new Date().toISOString(),
+      samples: activeWorkflow.samples.map((line) => ({
+        ...line,
+        reservedQuantity: line.selectedQuantity,
+        reservedAt: new Date().toISOString(),
+        issuedQuantity: 0,
+      })),
+    }
+    const next = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
+    if (persistWorkflows(next, "Stock checked and selected quantities reserved.")) setSection("Sample Issue")
+  }
+
+  const markPrepared = () => {
+    if (!activeWorkflow || activeWorkflow.status !== "reserved") return
+    const nextWorkflow = { ...activeWorkflow, status: "prepared" as const, preparedAt: new Date().toISOString() }
+    const next = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
+    persistWorkflows(next, "Reserved samples marked as prepared.")
+  }
+
+  const createDispatch = (form: HTMLFormElement) => {
+    if (!activeWorkflow || activeWorkflow.status !== "prepared") return
+    const formData = new FormData(form)
+    const expectedReturnDate = String(formData.get("expectedReturnDate") ?? "").trim()
+    if (!expectedReturnDate) {
+      setError("Enter the expected return date before creating the dispatch request.")
+      return
+    }
+    const samples = activeWorkflow.samples.map((line) => ({
+      ...line,
+      issuedQuantity: Number(formData.get(`issued-${line.itemId}`)),
+      condition: String(formData.get(`condition-${line.itemId}`) ?? ""),
+      issueStatus: String(formData.get(`issueStatus-${line.itemId}`) ?? ""),
+    }))
+    const invalidLine = samples.find((line) =>
+      !Number.isInteger(line.issuedQuantity) ||
+      line.issuedQuantity < 0 ||
+      line.issuedQuantity > line.reservedQuantity ||
+      (line.issuedQuantity > 0 && (!line.condition || !line.issueStatus))
+    )
+    if (invalidLine) {
+      setError(`${invalidLine.name} has an invalid issue quantity or is missing its condition or issue status.`)
+      return
+    }
+    if (!samples.some((line) => line.issuedQuantity > 0)) {
+      setError("Enter an issued quantity greater than zero for at least one sample.")
+      return
+    }
+    if (dispatches.some((dispatch) => dispatch.request.id === activeWorkflow.request.id)) {
+      setError("A dispatch request already exists for this sample request.")
+      return
+    }
+
+    const createdAt = new Date().toISOString()
+    const dispatch: Stage2Dispatch = {
+      id: `DSP-${activeWorkflow.request.id}`,
+      request: activeWorkflow.request,
+      samples: samples.filter((line) => line.issuedQuantity > 0),
+      expectedReturnDate,
+      createdAt,
+      status: "Pending dispatch",
+    }
+    const nextWorkflow: Stage2Workflow = {
+      ...activeWorkflow,
+      samples,
+      expectedReturnDate,
+      dispatchedAt: createdAt,
+      dispatchId: dispatch.id,
+      status: "dispatched",
+    }
+    const nextWorkflows = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
+    const nextDispatches = [dispatch, ...dispatches]
+    const issuedReportEntry = {
+      id: activeWorkflow.request.id,
+      organization: "",
+      project: activeWorkflow.request.project,
+      assignedTo: activeWorkflow.request.assignedCoordinator,
+      requiredDate: activeWorkflow.request.requiredDate,
+      returnBy: expectedReturnDate,
+      issuedQuantity: dispatch.samples.reduce((sum, line) => sum + line.issuedQuantity, 0),
+      dispatchStatus: "Pending",
+      samples: dispatch.samples.map((line) => ({
+        code: line.code,
+        name: line.name,
+        category: line.category,
+        issuedQuantity: line.issuedQuantity,
+      })),
+      stage2DispatchId: dispatch.id,
+      stage2Dispatch: dispatch,
+    }
+    let previousValues: Array<[string, string | null]> = []
+    try {
+      previousValues = [stage2WorkflowsStorageKey, stage2DispatchesStorageKey, issuedRequestsStorageKey]
+        .map((key) => [key, window.localStorage.getItem(key)])
+      const existingReports = JSON.parse(window.localStorage.getItem(issuedRequestsStorageKey) ?? "[]") as Array<{ id?: string }>
+      const nextReports = [
+        issuedReportEntry,
+        ...existingReports.filter((entry) => entry.id !== issuedReportEntry.id),
+      ]
+      window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(nextWorkflows))
+      window.localStorage.setItem(stage2DispatchesStorageKey, JSON.stringify(nextDispatches))
+      window.localStorage.setItem(issuedRequestsStorageKey, JSON.stringify(nextReports))
+    } catch {
+      try {
+        previousValues.forEach(([key, value]) => {
+          if (value === null) window.localStorage.removeItem(key)
+          else window.localStorage.setItem(key, value)
+        })
+      } catch {
+        setError("Dispatch creation failed and browser storage could not be restored.")
+        return
+      }
+      setError("Dispatch request could not be saved because browser storage is unavailable.")
+      return
+    }
+    setWorkflows(nextWorkflows)
+    setDispatches(nextDispatches)
+    setError("")
+    setFeedback(`${dispatch.id} is ready for the dispatch team or pickup arrangement.`)
+    window.dispatchEvent(new CustomEvent("archscale:navigate", {
+      detail: { activeRailId: "library", activeItem: "Delivery & Receipt" },
+    }))
+  }
+
+  const totalBagQuantity = activeWorkflow?.samples.reduce((sum, line) => sum + line.selectedQuantity, 0) ?? 0
+  const stepButton = (name: typeof section, icon: React.ReactNode, count?: number) => (
+    <button type="button" onClick={() => { setSection(name); setError("") }} className={cn(
+      "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium",
+      section === name ? "border-slate-900 bg-slate-900 text-white" : "border-border bg-background hover:bg-muted",
+    )}>
+      {icon}{name}{count === undefined ? null : <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-xs">{count}</span>}
+    </button>
+  )
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">Stage 2</p>
+          <h1 className="mt-1 text-xl font-semibold">Select &amp; Issue Samples</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Select catalogue samples, reserve stock, prepare issues, and create dispatch requests.</p>
+        </div>
+        <label className="min-w-[220px] text-xs font-medium">
+          Reviewed request
+          <select aria-label="Reviewed request" value={activeRequestId} onChange={(event) => openRequest(eligibleRequests.find((request) => request.id === event.target.value)!)} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm" disabled={eligibleRequests.length === 0}>
+            <option value="">Select a Stage 1 reviewed request</option>
+            {eligibleRequests.map((request) => (
+              <option key={request.id} value={request.id}>{request.id} · {request.project}</option>
+            ))}
+          </select>
+        </label>
+      </header>
+
+      <div className="flex flex-wrap gap-2 border-b border-border px-5 py-3">
+        {stepButton("Catalogue", <Package className="size-4" />)}
+        {stepButton("Sample Bag", <ShoppingBag className="size-4" />, activeWorkflow?.samples.length ?? 0)}
+        {stepButton("Sample Issue", <Send className="size-4" />)}
+      </div>
+
+      <main className="min-h-0 flex-1 overflow-y-auto p-5">
+        {!activeRequest ? (
+          <EmptyStage2 message="No requests are ready for Select & Issue. A request appears here after its assigned coordinator confirms it in Stage 1." />
+        ) : (
+          <div className="space-y-4">
+            <section className="rounded-lg border border-border bg-muted/20 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-primary">{activeRequest.id} · {activeRequest.status}</p>
+                  <h2 className="mt-1 font-semibold">{activeRequest.project}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Requester: {activeRequest.requester} · Coordinator: {activeRequest.assignedCoordinator}</p>
+                  <p className="mt-2 text-sm">{activeRequest.sampleDetails}</p>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-5 gap-y-2 text-sm">
+                  <div><dt className="text-xs text-muted-foreground">Request quantity</dt><dd className="font-medium">{activeRequest.quantity}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">Required date</dt><dd className="font-medium">{formatRequestDate(activeRequest.requiredDate)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">Request type</dt><dd className="font-medium">{activeRequest.requestType}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">Delivery address</dt><dd className="font-medium">{activeRequest.deliveryAddress}</dd></div>
+                </dl>
+              </div>
+            </section>
+
+            {section === "Catalogue" && (
+              <section className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><h2 className="font-semibold">Sample Catalogue</h2><p className="text-sm text-muted-foreground">Select up to {activeRequest.quantity} total sample units for this request.</p></div>
+                  <label className="relative block w-full max-w-sm">
+                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <input aria-label="Search sample catalogue" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, code, category..." className={cn(inputClass, "pl-9")} />
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {catalogue.map((item) => {
+                    const available = availableQuantityFor(item)
+                    const alreadySelected = activeWorkflow?.samples.some((line) => line.itemId === item.id) ?? false
+                    return (
+                      <article key={item.id} className="rounded-lg border border-border p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="size-10 shrink-0 rounded-md border border-border" style={{ backgroundColor: item.color }} />
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate text-sm font-semibold">{item.name}</h3>
+                            <p className="text-xs text-muted-foreground">{item.code} · {item.category}</p>
+                            <p className="mt-1 text-xs">{item.finish} · {item.size}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className={cn("rounded-full px-2 py-1 text-xs font-medium", available > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>
+                            {available > 0 ? `Available · ${available}` : "Out of stock"}
+                          </span>
+                          <button type="button" disabled={available < 1 || alreadySelected || activeWorkflow?.status !== undefined && activeWorkflow.status !== "selection"} onClick={() => addSample(item)} className="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                            {alreadySelected ? "In Sample Bag" : "Add sample"}
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                  {catalogue.length === 0 && <p className="col-span-full rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No catalogue samples match this search.</p>}
+                </div>
+              </section>
+            )}
+
+            {section === "Sample Bag" && (
+              <section className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><h2 className="font-semibold">Sample Bag</h2><p className="text-sm text-muted-foreground">{totalBagQuantity} of {activeRequest.quantity} requested units selected.</p></div>
+                  {activeWorkflow?.status === "selection" && <button type="button" onClick={reserveSamples} disabled={!activeWorkflow.samples.length} className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-40">Check stock &amp; reserve</button>}
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full min-w-[700px] text-sm">
+                    <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Availability</th><th className="px-3 py-2">Quantity</th><th className="px-3 py-2">Stock location</th><th className="px-3 py-2">Action</th></tr></thead>
+                    <tbody className="divide-y divide-border">
+                      {(activeWorkflow?.samples ?? []).map((line) => {
+                        const item = items.find((entry) => entry.id === line.itemId)
+                        const available = item ? availableQuantityFor(item) : 0
+                        return (
+                          <tr key={line.itemId}>
+                            <td className="px-3 py-3"><span className="block font-medium">{line.name}</span><span className="text-xs text-muted-foreground">{line.code} · {line.category}</span></td>
+                            <td className="px-3 py-3"><span className={cn("rounded-full px-2 py-1 text-xs font-medium", available >= line.selectedQuantity ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>{available >= line.selectedQuantity ? `${available} available` : `Only ${available} available`}</span></td>
+                            <td className="px-3 py-3"><input aria-label={`Quantity for ${line.name}`} type="number" min={1} max={Math.min(available + line.selectedQuantity, activeRequest.quantity - totalBagQuantity + line.selectedQuantity)} value={line.selectedQuantity} disabled={activeWorkflow?.status !== "selection"} onChange={(event) => {
+                              const quantity = Number(event.target.value)
+                              if (!Number.isInteger(quantity) || quantity < 1) return
+                              const otherQuantity = totalBagQuantity - line.selectedQuantity
+                              if (otherQuantity + quantity > activeRequest.quantity) {
+                                setError(`Total Sample Bag quantity cannot exceed ${activeRequest.quantity}.`)
+                                return
+                              }
+                              if (quantity > available + line.selectedQuantity) {
+                                setError(`Only ${available} units of ${line.name} are available.`)
+                                return
+                              }
+                              setError("")
+                              updateLine(line.itemId, { selectedQuantity: quantity })
+                            }} className="h-8 w-20 rounded-md border border-input px-2 text-sm disabled:bg-muted" /></td>
+                            <td className="px-3 py-3">
+                              {getInventoryLocations(item).length ? (
+                                <select aria-label={`Stock location for ${line.name}`} disabled={activeWorkflow?.status !== "selection"} value={line.stockLocation} onChange={(event) => updateLine(line.itemId, { stockLocation: event.target.value })} className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-xs">
+                                  <option value="">Select location</option>{getInventoryLocations(item).map((location) => <option key={location}>{location}</option>)}
+                                </select>
+                              ) : <span className="text-xs text-muted-foreground">No locations configured</span>}
+                            </td>
+                            <td className="px-3 py-3">{activeWorkflow?.status === "selection" && <button type="button" aria-label={`Remove ${line.name}`} onClick={() => {
+                              const next = workflows.map((workflow) => workflow.request.id === activeRequestId
+                                ? { ...workflow, samples: workflow.samples.filter((entry) => entry.itemId !== line.itemId) }
+                                : workflow)
+                              persistWorkflows(next, `${line.name} removed from the Sample Bag.`)
+                            }} className="inline-flex h-8 items-center gap-1 rounded border border-input px-2 text-xs hover:bg-accent"><Trash2 className="size-3.5" />Remove</button>}</td>
+                          </tr>
+                        )
+                      })}
+                      {!activeWorkflow?.samples.length && <tr><td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">No samples selected yet. Browse the catalogue to add samples.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {section === "Sample Issue" && (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="font-semibold">Reserve &amp; Prepare</h2>
+                  <p className="text-sm text-muted-foreground">Available quantities are calculated from inventory stock minus active reservations.</p>
+                </div>
+                {!activeWorkflow?.samples.length ? (
+                  <EmptyStage2 message="Add samples to the Sample Bag before reserving or issuing." />
+                ) : activeWorkflow.status === "selection" ? (
+                  <div className="rounded-lg border border-border p-5">
+                    <p className="text-sm">Review the Sample Bag quantities, then check stock and reserve them before preparation.</p>
+                    <button type="button" onClick={() => setSection("Sample Bag")} className="mt-3 h-9 rounded-md border border-input px-3 text-sm hover:bg-accent">Review Sample Bag</button>
+                  </div>
+                ) : activeWorkflow.status === "reserved" ? (
+                  <div className="space-y-3 rounded-lg border border-border p-5">
+                    <p className="text-sm">Reserved quantities are held for this request. Confirm when samples have been prepared.</p>
+                    <SampleQuantitySummary lines={activeWorkflow.samples} />
+                    <button type="button" onClick={markPrepared} className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">Mark samples prepared</button>
+                  </div>
+                ) : activeWorkflow.status === "prepared" ? (
+                  <form className="space-y-4 rounded-lg border border-border p-5" onSubmit={(event) => { event.preventDefault(); createDispatch(event.currentTarget) }}>
+                    <p className="text-sm">Enter actual issued quantities. Each quantity must be no greater than the reserved quantity.</p>
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full min-w-[760px] text-sm">
+                        <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Reserved</th><th className="px-3 py-2">Actual issued</th><th className="px-3 py-2">Condition</th><th className="px-3 py-2">Issue status</th></tr></thead>
+                        <tbody className="divide-y divide-border">
+                          {activeWorkflow.samples.map((line) => (
+                            <tr key={line.itemId}>
+                              <td className="px-3 py-3 font-medium">{line.name}<span className="block text-xs text-muted-foreground">{line.code}</span></td>
+                              <td className="px-3 py-3">{line.reservedQuantity}</td>
+                              <td className="px-3 py-3"><input aria-label={`Issued quantity for ${line.name}`} name={`issued-${line.itemId}`} type="number" min={0} max={line.reservedQuantity} defaultValue={line.reservedQuantity} className="h-8 w-20 rounded-md border border-input px-2" /></td>
+                              <td className="px-3 py-3"><select aria-label={`Condition for ${line.name}`} name={`condition-${line.itemId}`} defaultValue="" className="h-8 rounded-md border border-input bg-background px-2 text-xs"><option value="">Select condition</option>{sampleConditions.map((value) => <option key={value}>{value}</option>)}</select></td>
+                              <td className="px-3 py-3"><select aria-label={`Issue status for ${line.name}`} name={`issueStatus-${line.itemId}`} defaultValue="" className="h-8 rounded-md border border-input bg-background px-2 text-xs"><option value="">Select status</option>{sampleIssueStatuses.map((value) => <option key={value}>{value}</option>)}</select></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <label className="block max-w-xs text-xs font-medium">Expected return date<input aria-label="Expected return date" name="expectedReturnDate" type="date" required className={cn(inputClass, "mt-1")} /></label>
+                    <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">Condition and Issue Status options are initial suggestions pending business confirmation. No stock locations are present in the current inventory data.</p>
+                    <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">Record issue &amp; create dispatch</button>
+                  </form>
+                ) : (
+                  <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+                    <h3 className="font-semibold text-emerald-900">Dispatch request created</h3>
+                    <p className="text-sm text-emerald-900">{activeWorkflow.dispatchId} · Expected return {formatRequestDate(activeWorkflow.expectedReturnDate)}</p>
+                    <p className="text-sm text-emerald-900">Samples are ready for the dispatch team or pickup arrangement. Delivery and receipt have not been marked.</p>
+                    <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("archscale:navigate", { detail: { activeRailId: "library", activeItem: "Delivery & Receipt" } }))} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">Continue to Delivery &amp; Receipt</button>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
+        )}
+        {error && <p role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+        {feedback && <p role="status" className="mt-4 text-sm text-muted-foreground">{feedback}</p>}
+      </main>
+    </div>
+  )
+}
+
+type Stage2SampleLine = {
+  itemId: string
+  code: string
+  name: string
+  category: string
+  finish: string
+  size: string
+  selectedQuantity: number
+  stockLocation: string
+  reservedQuantity: number
+  reservedAt?: string
+  issuedQuantity: number
+  condition: string
+  issueStatus: string
+}
+
+type Stage2Workflow = {
+  request: MaterialRequest
+  samples: Stage2SampleLine[]
+  status: "selection" | "reserved" | "prepared" | "dispatched"
+  createdAt: string
+  reservedAt?: string
+  preparedAt?: string
+  expectedReturnDate?: string
+  dispatchedAt?: string
+  dispatchId?: string
+}
+
+type Stage2Dispatch = {
+  id: string
+  request: MaterialRequest
+  samples: Stage2SampleLine[]
+  expectedReturnDate: string
+  createdAt: string
+  status: "Pending dispatch"
+}
+
+function getInventoryLocations(item?: InventoryItem): string[] {
+  if (!item) return []
+  const source = item as InventoryItem & { location?: unknown; stockLocation?: unknown; locations?: unknown }
+  const values = [source.location, source.stockLocation, source.locations]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim())
+  return [...new Set(values)]
+}
+
+function getInventoryLocation(item: InventoryItem): string {
+  return getInventoryLocations(item)[0] ?? ""
+}
+
+function EmptyStage2({ message }: { message: string }) {
+  return <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">{message}</div>
+}
+
+function SampleQuantitySummary({ lines }: { lines: Stage2SampleLine[] }) {
+  return (
+    <ul className="divide-y divide-border rounded-md border border-border">
+      {lines.map((line) => <li key={line.itemId} className="flex justify-between gap-3 px-3 py-2 text-sm"><span>{line.name}</span><span>{line.reservedQuantity} reserved</span></li>)}
+    </ul>
+  )
+}
+
+function EmptySampleStagePage() {
+  return <div className="min-h-0 w-full flex-1 bg-background" />
+}
+
+export function DeliveryReceiptPage() {
+  return <EmptySampleStagePage />
+}
+
+export function ReviewsApprovalsPage() {
+  return <EmptySampleStagePage />
+}
+
+export function ReturnsClosurePage() {
+  return <EmptySampleStagePage />
 }

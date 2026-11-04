@@ -36,6 +36,14 @@ export type RailPreviewItem = {
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>
 }
 
+export const SAMPLE_MANAGEMENT_STAGES = [
+  "Sample Request",
+  "Select & Issue",
+  "Delivery & Receipt",
+  "Reviews & Approvals",
+  "Returns & Closure",
+] as const
+
 export const RAIL_PREVIEW_CONTENT: Record<
   RailAppId,
   { title: string; items: RailPreviewItem[] }

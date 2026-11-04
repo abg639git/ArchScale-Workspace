@@ -45,6 +45,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import type { RailAppId } from "./rail-content"
+import { SAMPLE_MANAGEMENT_STAGES } from "./rail-content"
 
 // Base nav item - used by simple sidebars
 export type NavItem = {
@@ -233,6 +234,17 @@ const ApplicationSidebarBase: React.FC<ApplicationSidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedFile, setSelectedFile] = React.useState("README.md")
+  const [sampleStagesOpen, setSampleStagesOpen] = React.useState(
+    activeItem === "Swatch & Sample" ||
+      (SAMPLE_MANAGEMENT_STAGES as readonly string[]).includes(activeItem)
+  )
+
+  React.useEffect(() => {
+    setSampleStagesOpen(
+      activeItem === "Swatch & Sample" ||
+        (SAMPLE_MANAGEMENT_STAGES as readonly string[]).includes(activeItem)
+    )
+  }, [activeItem])
 
   // Render context-specific view depending on selected rail item
   const renderSidebarBody = () => {
@@ -423,14 +435,54 @@ const ApplicationSidebarBase: React.FC<ApplicationSidebarProps> = ({
                   { label: "Swatch & Sample", icon: FlaskConical },
                 ].map(({ label, icon: Icon }) => (
                   <SidebarMenuItem key={label}>
-                    <SidebarMenuButton
-                      isActive={activeItem === label}
-                      onClick={() => onSelectItem(label)}
-                      className="cursor-pointer"
-                    >
-                      <Icon className="size-4" />
-                      <span>{label}</span>
-                    </SidebarMenuButton>
+                    {label === "Swatch & Sample" ? (
+                      <Collapsible open={sampleStagesOpen} onOpenChange={setSampleStagesOpen}>
+                        <div className="flex items-center gap-1">
+                          <SidebarMenuButton
+                            isActive={activeItem === label}
+                            onClick={() => onSelectItem(label)}
+                            className="min-w-0 flex-1 cursor-pointer"
+                          >
+                            <Icon className="size-4" />
+                            <span>{label}</span>
+                          </SidebarMenuButton>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={`${sampleStagesOpen ? "Collapse" : "Expand"} Swatch & Sample stages`}
+                              aria-expanded={sampleStagesOpen}
+                              className="flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                            >
+                              <ChevronRight className={`size-4 transition-transform duration-200 ${sampleStagesOpen ? "rotate-90" : ""}`} />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                        <CollapsibleContent>
+                          <SidebarMenuSub>
+                            {SAMPLE_MANAGEMENT_STAGES.map((stage) => (
+                              <SidebarMenuSubItem key={stage}>
+                                <SidebarMenuSubButton
+                                  isActive={activeItem === stage}
+                                  onClick={() => onSelectItem(stage)}
+                                  className="cursor-pointer"
+                                >
+                                  <span>{stage}</span>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            ))}
+                          </SidebarMenuSub>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : (
+                      <SidebarMenuButton
+                        isActive={activeItem === label}
+                        onClick={() => onSelectItem(label)}
+                        className="cursor-pointer"
+                      >
+                        <Icon className="size-4" />
+                        <span>{label}</span>
+                      </SidebarMenuButton>
+                    )}
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>

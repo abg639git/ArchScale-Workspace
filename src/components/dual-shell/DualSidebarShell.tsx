@@ -26,7 +26,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { AppRail } from "./AppRail"
-import { RAIL_PREVIEW_CONTENT, type RailAppId } from "./rail-content"
+import { RAIL_PREVIEW_CONTENT, SAMPLE_MANAGEMENT_STAGES, type RailAppId } from "./rail-content"
 import { ApplicationSidebar, defaultSidebarData } from "./ApplicationSidebar"
 import { cn } from "@/lib/utils"
 import { usePersistentState } from "@/hooks/use-persistent-state"
@@ -57,6 +57,18 @@ const MaterialInformationPage = React.lazy(() =>
 )
 const SwatchSamplePage = React.lazy(() =>
   import("@/pages/library/SwatchSamplePage").then((m) => ({ default: m.SwatchSamplePage }))
+)
+const SelectIssuePage = React.lazy(() =>
+  import("@/pages/library/SwatchSamplePage").then((m) => ({ default: m.SelectIssuePage }))
+)
+const DeliveryReceiptPage = React.lazy(() =>
+  import("@/pages/library/SwatchSamplePage").then((m) => ({ default: m.DeliveryReceiptPage }))
+)
+const ReviewsApprovalsPage = React.lazy(() =>
+  import("@/pages/library/SwatchSamplePage").then((m) => ({ default: m.ReviewsApprovalsPage }))
+)
+const ReturnsClosurePage = React.lazy(() =>
+  import("@/pages/library/SwatchSamplePage").then((m) => ({ default: m.ReturnsClosurePage }))
 )
 const ItemListPage = React.lazy(() =>
   import("@/pages/products/ItemListPage").then((m) => ({ default: m.ItemListPage }))
@@ -89,6 +101,11 @@ const pagesByRail: Partial<
   library: {
     "Material information": MaterialInformationPage,
     "Swatch & Sample": SwatchSamplePage,
+    [SAMPLE_MANAGEMENT_STAGES[0]]: SwatchSamplePage,
+    [SAMPLE_MANAGEMENT_STAGES[1]]: SelectIssuePage,
+    [SAMPLE_MANAGEMENT_STAGES[2]]: DeliveryReceiptPage,
+    [SAMPLE_MANAGEMENT_STAGES[3]]: ReviewsApprovalsPage,
+    [SAMPLE_MANAGEMENT_STAGES[4]]: ReturnsClosurePage,
   },
   products: {
     "Item list": ItemListPage,
@@ -416,6 +433,16 @@ export function DualSidebarShell() {
   }, [])
   const setActiveItem = React.useCallback((item: string) => {
     setSelection((current) => ({ ...current, activeItem: item }))
+  }, [])
+
+  React.useEffect(() => {
+    const handleWorkflowNavigation = (event: Event) => {
+      const detail = (event as CustomEvent<ActivePageSelection>).detail
+      if (!detail || !pagesByRail[detail.activeRailId]?.[detail.activeItem]) return
+      setSelection(detail)
+    }
+    window.addEventListener("archscale:navigate", handleWorkflowNavigation)
+    return () => window.removeEventListener("archscale:navigate", handleWorkflowNavigation)
   }, [])
 
   React.useEffect(() => {
