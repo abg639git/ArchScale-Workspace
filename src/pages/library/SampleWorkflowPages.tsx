@@ -297,6 +297,25 @@ const initialsOf = (name: string) =>
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("") || "–"
 
+const avatarColors = [
+  "bg-indigo-600",
+  "bg-rose-600",
+  "bg-emerald-600",
+  "bg-amber-600",
+  "bg-sky-600",
+  "bg-violet-600",
+  "bg-teal-600",
+  "bg-blue-600",
+]
+
+const avatarColorFor = (name: string) => {
+  let hash = 0
+  for (const character of name.trim().toLowerCase()) {
+    hash = (character.charCodeAt(0) + (hash << 6) + (hash << 16) - hash) >>> 0
+  }
+  return avatarColors[hash % avatarColors.length]
+}
+
 /** Small fabric-style swatch used everywhere a sample is listed. */
 function SampleThumb({
   name,
@@ -624,7 +643,7 @@ export function SwatchSamplePage() {
                     </td>
                     <td className="px-4 py-3.5 align-top">
                       <div className="flex items-center gap-2.5">
-                        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">{initialsOf(request.requester)}</span>
+                        <span aria-hidden="true" className={`flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${avatarColorFor(request.requester)}`}>{initialsOf(request.requester)}</span>
                         <span className="text-sm font-medium text-slate-700">{request.requester}</span>
                       </div>
                     </td>
