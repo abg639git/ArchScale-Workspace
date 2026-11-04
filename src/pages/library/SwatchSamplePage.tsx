@@ -94,7 +94,6 @@ function validateRequest(request: MaterialRequest): string | null {
   ].filter(([, value]) => !value.trim()).map(([label]) => label)
 
   if (missing.length) return `Complete the required fields: ${missing.join(", ")}.`
-  if (delivery.receiptStatus === "Pending") return "Select a receipt status other than Pending before confirming receipt."
   if (!Number.isInteger(request.quantity) || request.quantity < 1) {
     return "Quantity must be a whole number greater than zero."
   }
@@ -1090,6 +1089,7 @@ function validateStage3Receipt(delivery: Stage3Delivery, issuedQuantity: number)
   ]
   const missing = required.filter(([, value]) => !value.trim()).map(([label]) => label)
   if (missing.length) return `Complete the required fields: ${missing.join(", ")}.`
+  if (delivery.receiptStatus === "Pending") return "Select a receipt status other than Pending before confirming receipt."
   if (!Number.isInteger(delivery.receivedQuantity) || delivery.receivedQuantity < 0 || delivery.receivedQuantity > issuedQuantity) {
     return `Received quantity must be a whole number between 0 and the issued quantity (${issuedQuantity}).`
   }
@@ -1206,7 +1206,7 @@ function EmptySampleStagePage() {
 
 export function DeliveryReceiptPage() {
   const [dispatches, setDispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
-  const [activeDispatchId, setActiveDispatchId] = React.useState("")
+  const [activeDispatchId, setActiveDispatchId] = React.useState(() => dispatches[0]?.id ?? "")
   const [deliveryError, setDeliveryError] = React.useState("")
   const [deliveryFeedback, setDeliveryFeedback] = React.useState("")
   const activeDispatch = dispatches.find((dispatch) => dispatch.id === activeDispatchId)
@@ -1216,9 +1216,9 @@ export function DeliveryReceiptPage() {
 
   const updateDelivery = (update: Partial<Stage3Delivery>) => {
     if (!activeDispatch) return
-    const history = update.dispatchStatus && update.dispatchStatus !== delivery.dispatchStatus
+    const history = update.history ?? (update.dispatchStatus && update.dispatchStatus !== delivery.dispatchStatus
       ? [...delivery.history, { action: `Dispatch status updated to ${update.dispatchStatus}`, at: currentTimestamp() }]
-      : delivery.history
+      : delivery.history)
     const updated: Stage2Dispatch = {
       ...activeDispatch,
       delivery: { ...delivery, ...update, history },
@@ -1228,20 +1228,21 @@ export function DeliveryReceiptPage() {
       window.localStorage.setItem(stage2DispatchesStorageKey, JSON.stringify(next))
     } catch {
       setDeliveryError("Delivery updates could not be saved in this browser.")
-      return
+      return false
     }
     setDispatches(next)
     setDeliveryError("")
+    return true
   }
 
   const saveDeliveryDraft = (form: HTMLFormElement) => {
     if (!activeDispatch) return
     const values = readStage3Form(form, delivery)
-    updateDelivery({
+    const saved = updateDelivery({
       ...values,
       history: [...delivery.history, { action: "Delivery details saved as draft", at: currentTimestamp() }],
     })
-    setDeliveryFeedback("Delivery details saved as draft.")
+    if (saved) setDeliveryFeedback("Delivery details saved as draft.")
   }
 
   const confirmReceipt = (form: HTMLFormElement) => {
