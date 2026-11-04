@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
 import { initialItems, type InventoryItem } from "@/pages/products/inventory-data"
+import { directoryData, type DirectoryEntry } from "@/components/split-view/data"
 
 type RequestStatus = "Draft" | "Submitted" | "Ready for Select & Issue"
 
@@ -45,6 +46,8 @@ const stage2WorkflowsStorageKey = "archscale.samples.stage2.workflows"
 const stage2DispatchesStorageKey = "archscale.samples.stage2.dispatches"
 const issuedRequestsStorageKey = "archscale.samples.requests"
 const inventoryStorageKey = "archscale.inventory.items"
+const stage4ReviewsStorageKey = "archscale.samples.stage4.reviews"
+const stage4CoordinatorNotificationsStorageKey = "archscale.samples.stage4.coordinatorNotifications"
 
 const sampleConditions = ["Good", "Damaged"]
 const sampleIssueStatuses = ["Prepared", "Issued"]
@@ -1409,7 +1412,491 @@ export function DeliveryReceiptPage() {
 }
 
 export function ReviewsApprovalsPage() {
-  return <EmptySampleStagePage />
+  const [dispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
+  const [reviews, setReviews] = usePersistentState<Stage4SampleReview[]>(stage4ReviewsStorageKey, [])
+  const [contacts] = usePersistentState<DirectoryEntry[]>("archscale.contacts", directoryData)
+  const [activeDispatchId, setActiveDispatchId] = React.useState(() => dispatches[0]?.id ?? "")
+  const [sampleId, setSampleId] = React.useState("")
+  const [reviewer, setReviewer] = React.useState("")
+  const [reviewDate, setReviewDate] = React.useState("")
+  const [reviewStatus, setReviewStatus] = React.useState<Stage4ReviewStatus>("Pending Review")
+  const [decision, setDecision] = React.useState<Stage4Decision | "">("")
+  const [comments, setComments] = React.useState("")
+  const [feedback, setFeedback] = React.useState("")
+  const [reviewedQuantity, setReviewedQuantity] = React.useState(0)
+  const [followUp, setFollowUp] = React.useState<Stage4FollowUp>("No Follow-up")
+  const [finalDecision, setFinalDecision] = React.useState<Stage4Decision | "">("")
+  const [finalComments, setFinalComments] = React.useState("")
+  const [decisionDate, setDecisionDate] = React.useState("")
+  const [responsibleCoordinator, setResponsibleCoordinator] = React.useState("")
+  const [error, setError] = React.useState("")
+  const [message, setMessage] = React.useState("")
+
+  const eligibleDispatches = dispatches.filter((dispatch) => {
+    const receipt = dispatch.delivery
+    return !!receipt?.receiptConfirmedAt &&
+      (receipt.receiptStatus === "Partially Received" || receipt.receiptStatus === "Fully Received") &&
+      receipt.receivedCondition !== "Damaged" &&
+      receipt.receivedQuantity > 0 &&
+      dispatch.samples.some((sample) => sample.issuedQuantity > 0 && sample.condition !== "Damaged")
+  })
+  const activeDispatch = eligibleDispatches.find((dispatch) => dispatch.id === activeDispatchId)
+  const receipt = activeDispatch?.delivery
+  const eligibleSamples = activeDispatch?.samples.filter((sample) =>
+    sample.issuedQuantity > 0 && sample.condition !== "Damaged"
+  ) ?? []
+  const activeRecord = reviews.find((record) => record.dispatchId === activeDispatchId && record.sampleId === sampleId)
+  const activeCycle = activeRecord?.cycles.at(-1)
+  const reviewerContacts = contacts.length ? contacts : directoryData
+  const authorizedReviewers = reviewerContacts.filter((contact) =>
+    contact.type === "person" &&
+    contact.status === "active" &&
+    contact.tags.some((tag) => tag.toLowerCase() === "client" || tag.toLowerCase() === "studio")
+  )
+  const reviewedByOtherSamples = activeDispatchId
+    ? reviews.filter((record) => record.dispatchId === activeDispatchId && record.sampleId !== sampleId)
+      .reduce((sum, record) => sum + (record.cycles.at(-1)?.reviewedQuantity ?? 0), 0)
+    : 0
+  const availableReviewQuantity = Math.max(0, (receipt?.receivedQuantity ?? 0) - reviewedByOtherSamples)
+
+  React.useEffect(() => {
+    if (activeCycle) {
+      setReviewer(activeCycle.reviewer)
+      setReviewDate(activeCycle.reviewDate)
+      setReviewStatus(activeCycle.status)
+      setDecision(activeCycle.decision)
+      setComments(activeCycle.comments)
+      setFeedback(activeCycle.feedback)
+      setReviewedQuantity(activeCycle.reviewedQuantity)
+      setFollowUp(activeCycle.followUp)
+      setFinalDecision(activeCycle.finalDecision ?? "")
+      setFinalComments(activeCycle.finalComments ?? "")
+      setDecisionDate(activeCycle.decisionDate ?? "")
+      setResponsibleCoordinator(activeCycle.nextResponsibleCoordinator ?? activeDispatch?.request.assignedCoordinator ?? "")
+    } else {
+      setReviewer("")
+      setReviewDate("")
+      setReviewStatus("Pending Review")
+      setDecision("")
+      setComments("")
+      setFeedback("")
+      setReviewedQuantity(0)
+      setFollowUp("No Follow-up")
+      setFinalDecision("")
+      setFinalComments("")
+      setDecisionDate("")
+      setResponsibleCoordinator(activeDispatch?.request.assignedCoordinator ?? "")
+    }
+    setError("")
+    setMessage("")
+  }, [activeDispatchId, sampleId, reviews, activeDispatch, activeCycle])
+
+  const persistReviews = (nextReviews: Stage4SampleReview[], successMessage: string) => {
+    try {
+      window.localStorage.setItem(stage4ReviewsStorageKey, JSON.stringify(nextReviews))
+    } catch {
+      setError("Review updates could not be saved in this browser.")
+      return false
+    }
+    setReviews(nextReviews)
+    setError("")
+    setMessage(successMessage)
+    return true
+  }
+
+  const saveReview = (mode: "draft" | "submit" | "complete") => {
+    if (!activeDispatch || !receipt || !sampleId) return
+    const sample = eligibleSamples.find((entry) => entry.itemId === sampleId)
+    if (!sample) return
+    const currentRecord = reviews.find((record) => record.dispatchId === activeDispatch.id && record.sampleId === sampleId)
+    const currentCycle = currentRecord?.cycles.at(-1)
+    if (currentCycle?.status === "Review Completed" || currentCycle?.finalDecision) {
+      setError("This review cycle is complete and cannot be changed. Start a revision cycle when applicable.")
+      return
+    }
+    if (!reviewer) {
+      setError("Select an authorized client or studio reviewer.")
+      return
+    }
+    if (!reviewedQuantity || !Number.isInteger(reviewedQuantity) || reviewedQuantity > availableReviewQuantity) {
+      setError(`Reviewed quantity must be between 1 and ${availableReviewQuantity}, based on confirmed received quantity.`)
+      return
+    }
+    if (mode === "complete") {
+      if (!decision) {
+        setError("Select a review decision before recording this review.")
+        return
+      }
+      if (decision === "Rejected" && !comments.trim()) {
+        setError("Add a rejection reason in Reviewer Comments.")
+        return
+      }
+      if (decision === "Changes Required" && !feedback.trim()) {
+        setError("Describe the required changes before completing this review.")
+        return
+      }
+      if (decision === "Changes Required") setFollowUp("Revision Required")
+    }
+    const cycleNumber = currentRecord?.cycles.length ?? 0
+    const cycle: Stage4ReviewCycle = {
+      cycle: cycleNumber || 1,
+      reviewer,
+      reviewDate: reviewDate || new Date().toISOString().slice(0, 10),
+      status: mode === "complete" ? "Review Completed" : mode === "submit" ? reviewStatus : "Pending Review",
+      isDraft: mode === "draft",
+      decision: mode === "complete" ? decision : decision,
+      comments,
+      feedback,
+      reviewedQuantity,
+      followUp: decision === "Changes Required" && mode === "complete" ? "Revision Required" : followUp,
+      history: [
+        ...(currentCycle?.history ?? []),
+        { action: mode === "draft" ? "Review saved as draft" : mode === "submit" ? "Submitted for review" : `Review decision recorded: ${decision}`, at: currentTimestamp() },
+      ],
+    }
+    const record: Stage4SampleReview = {
+      requestId: activeDispatch.request.id,
+      dispatchId: activeDispatch.id,
+      project: activeDispatch.request.project,
+      sampleId: sample.itemId,
+      sampleCode: sample.code,
+      sampleName: sample.name,
+      issuedQuantity: sample.issuedQuantity,
+      receivedQuantity: receipt.receivedQuantity,
+      receivedCondition: receipt.receivedCondition,
+      receiptStatus: receipt.receiptStatus,
+      cycles: currentRecord
+        ? [...currentRecord.cycles.slice(0, -1), cycle]
+        : [cycle],
+    }
+    const next = currentRecord
+      ? reviews.map((entry) => entry.dispatchId === record.dispatchId && entry.sampleId === record.sampleId ? record : entry)
+      : [record, ...reviews]
+    persistReviews(next, mode === "draft" ? "Review saved as draft." : mode === "submit" ? "Review submitted." : "Review decision recorded. Final decision is still required.")
+  }
+
+  const recordFinalDecision = () => {
+    if (!activeRecord || !activeCycle || activeCycle.status !== "Review Completed" || activeCycle.finalDecision) {
+      setError("Complete the sample review before recording a final decision.")
+      return
+    }
+    if (!finalDecision || !decisionDate || !responsibleCoordinator.trim()) {
+      setError("Final Decision, Decision Date, and Next Responsible Coordinator are required.")
+      return
+    }
+    if ((finalDecision === "Rejected" || finalDecision === "Changes Required") && !finalComments.trim()) {
+      setError("Add Final Comments for a rejected or changes-required decision.")
+      return
+    }
+    const finalCycle: Stage4ReviewCycle = {
+      ...activeCycle,
+      finalDecision,
+      finalComments,
+      decisionDate,
+      nextResponsibleCoordinator: responsibleCoordinator,
+      coordinatorNotifiedAt: currentTimestamp(),
+      history: [...activeCycle.history, { action: `Final decision recorded: ${finalDecision}; coordinator notified: ${responsibleCoordinator}`, at: currentTimestamp() }],
+    }
+    const updatedRecord = { ...activeRecord, cycles: [...activeRecord.cycles.slice(0, -1), finalCycle] }
+    const next = reviews.map((record) => record.dispatchId === activeRecord.dispatchId && record.sampleId === activeRecord.sampleId ? updatedRecord : record)
+    const notification: Stage4CoordinatorNotification = {
+      id: `${activeRecord.dispatchId}-${activeRecord.sampleId}-cycle-${activeCycle.cycle}`,
+      requestId: activeRecord.requestId,
+      dispatchId: activeRecord.dispatchId,
+      sampleName: activeRecord.sampleName,
+      coordinator: responsibleCoordinator,
+      decision: finalDecision,
+      comments: finalComments,
+      createdAt: finalCycle.coordinatorNotifiedAt!,
+      read: false,
+    }
+    let previous: Array<[string, string | null]> = []
+    try {
+      previous = [stage4ReviewsStorageKey, stage4CoordinatorNotificationsStorageKey]
+        .map((key) => [key, window.localStorage.getItem(key)])
+      const currentNotifications = JSON.parse(window.localStorage.getItem(stage4CoordinatorNotificationsStorageKey) ?? "[]") as Stage4CoordinatorNotification[]
+      const nextNotifications = [notification, ...currentNotifications.filter((item) => item.id !== notification.id)]
+      window.localStorage.setItem(stage4ReviewsStorageKey, JSON.stringify(next))
+      window.localStorage.setItem(stage4CoordinatorNotificationsStorageKey, JSON.stringify(nextNotifications))
+    } catch {
+      try {
+        previous.forEach(([key, value]) => {
+          if (value === null) window.localStorage.removeItem(key)
+          else window.localStorage.setItem(key, value)
+        })
+      } catch {
+        setError("Final decision save failed and browser storage could not be restored.")
+        return
+      }
+      setError("Final decision and coordinator notification could not be saved in this browser.")
+      return
+    }
+    setReviews(next)
+    setError("")
+    setMessage(`Final decision recorded; a coordinator notification is queued in this browser for ${responsibleCoordinator}.`)
+  }
+
+  const startRevisionCycle = () => {
+    if (!activeRecord || !activeCycle?.finalDecision) return
+    const revisionCycle: Stage4ReviewCycle = {
+      cycle: activeRecord.cycles.length + 1,
+      reviewer: "",
+      reviewDate: "",
+      status: "Pending Review",
+      decision: "",
+      comments: "",
+      feedback: "",
+      reviewedQuantity: activeCycle.reviewedQuantity,
+      followUp: "No Follow-up",
+      history: [{ action: `Revision review cycle ${activeRecord.cycles.length + 1} opened; prior decisions retained`, at: currentTimestamp() }],
+    }
+    const updated = { ...activeRecord, cycles: [...activeRecord.cycles, revisionCycle] }
+    persistReviews(reviews.map((record) => record.dispatchId === updated.dispatchId && record.sampleId === updated.sampleId ? updated : record), "New review cycle opened; prior review history is preserved.")
+  }
+
+  const nextAction = activeCycle?.finalDecision === "Approved" && activeCycle.followUp === "No Follow-up"
+    ? "Continue to Returns & Closure"
+    : activeCycle?.finalDecision === "Changes Required" || activeCycle?.followUp === "Revision Required"
+      ? "Coordinator follow-up: revision required"
+      : activeCycle?.followUp === "Replacement Required"
+        ? "Coordinator follow-up: replacement required"
+        : activeCycle?.followUp === "Coordinator Action Required" || activeCycle?.finalDecision === "Rejected"
+          ? "Coordinator action required"
+          : ""
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">Stage 4</p>
+          <h1 className="mt-1 text-xl font-semibold">Reviews &amp; Approvals</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Review confirmed received samples, record feedback, and route the next action.</p>
+        </div>
+        <label className="min-w-[220px] text-xs font-medium">
+          Confirmed Stage 3 receipt
+          <select aria-label="Confirmed Stage 3 receipt" value={activeDispatchId} onChange={(event) => {
+            setActiveDispatchId(event.target.value)
+            setSampleId("")
+          }} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm" disabled={!eligibleDispatches.length}>
+            <option value="">Select a confirmed receipt</option>
+            {eligibleDispatches.map((dispatch) => <option key={dispatch.id} value={dispatch.id}>{dispatch.request.id} · {dispatch.request.project}</option>)}
+          </select>
+        </label>
+      </header>
+
+      <main className="min-h-0 flex-1 overflow-y-auto p-5">
+        {!eligibleDispatches.length ? (
+          <EmptyStage2 message="No confirmed, reviewable Stage 3 receipts are available. Pending, rejected, and damaged receipts are excluded." />
+        ) : !activeDispatch || !receipt ? (
+          <EmptyStage2 message="Select a confirmed receipt to review its received samples." />
+        ) : (
+          <div className="space-y-4">
+            <section className="rounded-lg border border-border bg-muted/20 p-4">
+              <h2 className="mb-3 text-base font-semibold">Stage 3 Receipt Summary</h2>
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+                <ReviewSummary label="Request ID" value={activeDispatch.request.id} />
+                <ReviewSummary label="Project" value={activeDispatch.request.project} />
+                <ReviewSummary label="Sample details" value={activeDispatch.request.sampleDetails} />
+                <ReviewSummary label="Issued quantity" value={String(activeDispatch.samples.reduce((sum, item) => sum + item.issuedQuantity, 0))} />
+                <ReviewSummary label="Received quantity" value={String(receipt.receivedQuantity)} />
+                <ReviewSummary label="Received condition" value={receipt.receivedCondition} />
+                <ReviewSummary label="Receipt status" value={receipt.receiptStatus} />
+                <ReviewSummary label="Outstanding" value={String(Math.max(0, activeDispatch.samples.reduce((sum, item) => sum + item.issuedQuantity, 0) - receipt.receivedQuantity))} />
+              </dl>
+            </section>
+
+            <section className="space-y-4 rounded-lg border border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">1. Review Information</h2>
+                <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", activeCycle?.status === "Review Completed" ? "bg-emerald-100 text-emerald-800" : activeCycle?.isDraft ? "bg-slate-100 text-slate-700" : "bg-amber-100 text-amber-800")}>
+                  {activeCycle?.isDraft ? "Draft" : activeCycle?.status ?? reviewStatus}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <ReviewReadOnly label="Project *" value={activeDispatch.request.project} />
+                <label className="block text-xs font-medium"><span className={labelClass}>Sample Selection *</span>
+                  <select aria-label="Sample Selection" value={sampleId} onChange={(event) => setSampleId(event.target.value)} className={inputClass}>
+                    <option value="">Select received sample</option>
+                    {eligibleSamples.map((sample) => <option key={sample.itemId} value={sample.itemId}>{sample.name} · {sample.code} · issued {sample.issuedQuantity}</option>)}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium"><span className={labelClass}>Reviewer *</span>
+                  <select aria-label="Reviewer" value={reviewer} onChange={(event) => setReviewer(event.target.value)} className={inputClass}>
+                    <option value="">Select authorized reviewer</option>
+                    {authorizedReviewers.map((contact) => <option key={contact.id} value={contact.name}>{contact.name} · {contact.tags.filter((tag) => ["client", "studio"].includes(tag.toLowerCase())).join("/")}</option>)}
+                  </select>
+                </label>
+                <ReviewInput label="Review Date" type="date" value={reviewDate} onChange={setReviewDate} />
+                <label className="block text-xs font-medium"><span className={labelClass}>Review Status</span>
+                  <select aria-label="Review Status" value={reviewStatus} onChange={(event) => setReviewStatus(event.target.value as Stage4ReviewStatus)} className={inputClass}>
+                    {reviewStatuses.map((status) => <option key={status} disabled={status === "Review Completed"}>{status}</option>)}
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="space-y-4 rounded-lg border border-border p-4">
+              <h2 className="text-base font-semibold">2. Sample Review &amp; Feedback</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="block text-xs font-medium"><span className={labelClass}>Review Decision *</span>
+                  <select aria-label="Review Decision" value={decision} onChange={(event) => setDecision(event.target.value as Stage4Decision | "")} className={inputClass}>
+                    <option value="">Select review decision</option>{reviewDecisions.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </label>
+                <ReviewInput label="Reviewed Quantity *" type="number" min={0} max={availableReviewQuantity} value={reviewedQuantity || ""} onChange={(value) => setReviewedQuantity(Number(value))} />
+                <ReviewTextarea label="Reviewer Comments" value={comments} onChange={setComments} />
+                {(decision === "Changes Required" || decision === "Rejected") && <ReviewTextarea label="Feedback / Required Changes" value={feedback} onChange={setFeedback} />}
+              </div>
+              {sampleId && <p className="text-xs text-muted-foreground">Review quantity remaining from this receipt: {availableReviewQuantity} of {receipt.receivedQuantity} received.</p>}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => saveReview("draft")} disabled={!sampleId || activeCycle?.status === "Review Completed" || !!activeCycle?.finalDecision} className="h-9 rounded-md border border-input px-3 text-sm font-medium disabled:opacity-40">Save as Draft</button>
+                <button type="button" onClick={() => saveReview("submit")} disabled={!sampleId || activeCycle?.status === "Review Completed" || !!activeCycle?.finalDecision} className="h-9 rounded-md border border-input px-3 text-sm font-medium disabled:opacity-40">Submit for Review</button>
+                <button type="button" onClick={() => saveReview("complete")} disabled={!sampleId || activeCycle?.status === "Review Completed" || !!activeCycle?.finalDecision} className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-40">Record Review Decision</button>
+              </div>
+            </section>
+
+            <section className="space-y-4 rounded-lg border border-border p-4">
+              <h2 className="text-base font-semibold">3. Follow-up Actions</h2>
+              <label className="block max-w-md text-xs font-medium"><span className={labelClass}>Follow-up</span>
+                <select aria-label="Follow-up" value={followUp} onChange={(event) => setFollowUp(event.target.value as Stage4FollowUp)} disabled={decision === "Changes Required"} className={inputClass}>
+                  {followUps.map((value) => <option key={value}>{value}</option>)}
+                </select>
+              </label>
+              {decision === "Rejected" && <p className="text-sm text-amber-800">A rejection reason is required and will be included in the coordinator notification when the final decision is recorded.</p>}
+              {decision === "Changes Required" && <p className="text-sm text-amber-800">Revision Required will be created when this review decision is recorded.</p>}
+              {followUp === "Replacement Required" && <p className="text-sm text-muted-foreground">Replacement follow-up will remain linked to request {activeDispatch.request.id}.</p>}
+              {followUp === "Coordinator Action Required" && <p className="text-sm text-muted-foreground">The next action will be routed to the assigned coordinator.</p>}
+            </section>
+
+            <section className="space-y-4 rounded-lg border border-border p-4">
+              <h2 className="text-base font-semibold">4. Final Decision</h2>
+              {activeCycle?.finalDecision ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">{activeCycle.finalDecision}</span><span className="text-sm text-muted-foreground">Recorded {activeCycle.decisionDate} · Coordinator notification recorded for {activeCycle.nextResponsibleCoordinator}</span></div>
+                  <p className="text-sm">{activeCycle.finalComments || "No final comments."}</p>
+                  <p className="text-sm font-medium">{nextAction}</p>
+                  {activeCycle.finalDecision === "Approved" && activeCycle.followUp === "No Follow-up" && <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("archscale:navigate", { detail: { activeRailId: "library", activeItem: "Returns & Closure" } }))} className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">Continue to Returns &amp; Closure</button>}
+                  {(activeCycle.finalDecision === "Changes Required" || activeCycle.followUp === "Revision Required") && <button type="button" onClick={startRevisionCycle} className="h-9 rounded-md border border-input px-3 text-sm font-medium">Start revision review cycle</button>}
+                </div>
+              ) : (
+                <>
+                  {!activeCycle || activeCycle.status !== "Review Completed" ? <p className="text-sm text-muted-foreground">Record a review decision before entering the separate final decision.</p> : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <label className="block text-xs font-medium"><span className={labelClass}>Final Decision</span>
+                        <select aria-label="Final Decision" value={finalDecision} onChange={(event) => setFinalDecision(event.target.value as Stage4Decision | "")} className={inputClass}>
+                          <option value="">Select final decision</option>{finalDecisions.map((value) => <option key={value}>{value}</option>)}
+                        </select>
+                      </label>
+                      <ReviewInput label="Decision Date" type="date" value={decisionDate} onChange={setDecisionDate} />
+                      <label className="block text-xs font-medium"><span className={labelClass}>Next Responsible Coordinator</span>
+                        <select aria-label="Next Responsible Coordinator" value={responsibleCoordinator} onChange={(event) => setResponsibleCoordinator(event.target.value)} className={inputClass}>
+                          <option value="">Select coordinator</option><option>{activeDispatch.request.assignedCoordinator}</option>
+                        </select>
+                      </label>
+                      <ReviewTextarea label="Final Comments" value={finalComments} onChange={setFinalComments} />
+                      <button type="button" onClick={recordFinalDecision} className="h-9 self-end rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">Record Final Decision &amp; Queue Coordinator Notification</button>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+
+            <section className="space-y-2 rounded-lg border border-border p-4">
+              <h2 className="text-base font-semibold">Sample Review History</h2>
+              {activeRecord?.cycles.length ? activeRecord.cycles.map((cycle) => (
+                <div key={cycle.cycle} className="rounded-md bg-muted/30 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><strong>Cycle {cycle.cycle} · {cycle.isDraft ? "Draft" : cycle.status}</strong><span>{cycle.decision || "No decision"}{cycle.finalDecision ? ` · Final: ${cycle.finalDecision}` : ""}</span></div>
+                  <p className="mt-1 text-xs text-muted-foreground">Reviewer: {cycle.reviewer || "—"} · {cycle.reviewDate || "No review date"} · Quantity: {cycle.reviewedQuantity}</p>
+                  {cycle.comments && <p className="mt-2 text-sm">{cycle.comments}</p>}
+                  {cycle.feedback && <p className="mt-1 text-sm">Required changes: {cycle.feedback}</p>}
+                  {cycle.finalComments && <p className="mt-1 text-sm">Final comments: {cycle.finalComments}</p>}
+                  {cycle.history.map((entry, index) => <p key={`${entry.at}-${index}`} className="mt-1 text-xs text-muted-foreground">{entry.action} · {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.at))}</p>)}
+                </div>
+              )) : <p className="text-sm text-muted-foreground">No review history for this sample yet.</p>}
+            </section>
+          </div>
+        )}
+        {error && <p role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+        {message && <p role="status" className="mt-4 text-sm text-muted-foreground">{message}</p>}
+      </main>
+    </div>
+  )
+}
+
+type Stage4Decision = "Approved" | "Rejected" | "Changes Required"
+type Stage4ReviewStatus = "Pending Review" | "Under Review" | "Review Completed"
+type Stage4FollowUp = "No Follow-up" | "Revision Required" | "Replacement Required" | "Coordinator Action Required"
+type Stage4ReviewCycle = {
+  cycle: number
+  reviewer: string
+  reviewDate: string
+  status: Stage4ReviewStatus
+  isDraft?: boolean
+  decision: Stage4Decision | ""
+  comments: string
+  feedback: string
+  reviewedQuantity: number
+  followUp: Stage4FollowUp
+  finalDecision?: Stage4Decision
+  finalComments?: string
+  decisionDate?: string
+  nextResponsibleCoordinator?: string
+  coordinatorNotifiedAt?: string
+  history: Array<{ action: string; at: string }>
+}
+type Stage4SampleReview = {
+  requestId: string
+  dispatchId: string
+  project: string
+  sampleId: string
+  sampleCode: string
+  sampleName: string
+  issuedQuantity: number
+  receivedQuantity: number
+  receivedCondition: string
+  receiptStatus: string
+  cycles: Stage4ReviewCycle[]
+}
+type Stage4CoordinatorNotification = {
+  id: string
+  requestId: string
+  dispatchId: string
+  sampleName: string
+  coordinator: string
+  decision: Stage4Decision
+  comments: string
+  createdAt: string
+  read: boolean
+}
+
+const reviewStatuses: Stage4ReviewStatus[] = ["Pending Review", "Under Review", "Review Completed"]
+const reviewDecisions: Stage4Decision[] = ["Approved", "Rejected", "Changes Required"]
+const finalDecisions: Stage4Decision[] = ["Approved", "Rejected", "Changes Required"]
+const followUps: Stage4FollowUp[] = ["No Follow-up", "Revision Required", "Replacement Required", "Coordinator Action Required"]
+
+function ReviewSummary({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium">{value || "—"}</dd></div>
+}
+
+function ReviewReadOnly({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-md border border-border bg-muted/30 px-3 py-2"><span className="block text-xs text-muted-foreground">{label}</span><span className="mt-1 block text-sm font-medium">{value || "—"}</span></div>
+}
+
+function ReviewInput({
+  label, value, onChange, type = "text", min, max,
+}: {
+  label: string
+  value: string | number
+  onChange: (value: string) => void
+  type?: string
+  min?: number
+  max?: number
+}) {
+  return <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>{label}</span><input aria-label={label} type={type} min={min} max={max} step={type === "number" ? "1" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} /></label>
+}
+
+function ReviewTextarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>{label}</span><textarea aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} rows={2} className={cn(inputClass, "h-auto min-h-20 resize-y py-2")} /></label>
 }
 
 export function ReturnsClosurePage() {
