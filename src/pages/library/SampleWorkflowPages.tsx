@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import type { InventoryItem } from "@/pages/products/inventory-data"
 import {
   ASSIGNMENTS,
@@ -73,7 +74,6 @@ import {
   Plus,
   Search,
   Send,
-  Truck,
   X,
 } from "@/components/ui/icons"
 import { SampleStageNavigationContext } from "@/components/dual-shell/SampleStageNavigation"
@@ -91,7 +91,7 @@ const qtyInputClass =
 const metaPillClass = "rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200"
 const textAreaClass =
   "min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
-const cardClass = "rounded-xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/70 p-4 shadow-[0_2px_10px_rgba(15,23,42,0.045)] ring-1 ring-slate-900/[0.02] sm:p-5"
+const cardClass = "workflow-card rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
 const buttonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 const secondaryButtonClass =
@@ -102,6 +102,10 @@ const closureSecondaryButtonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 const closureWarningButtonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+const reviewSecondaryButtonClass =
+  "inline-flex min-h-9 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+const reviewPrimaryButtonClass =
+  "inline-flex min-h-9 items-center justify-center rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 // ArchScale brand (#f45a1e) heading treatment: table headers and label tiles get
 // a light brand band with darker brand text instead of the plain slate bands.
 // Band is tinted (not solid) so small caps stay WCAG-readable; matches the
@@ -109,11 +113,11 @@ const closureWarningButtonClass =
 const brandHeadingBand = "border-[#f8d3c1] bg-[#fdece4]"
 const brandHeadingText = "text-[#b1440f]"
 const stageThemes = [
-  { active: "border-indigo-600 bg-indigo-600 shadow-indigo-200/60", icon: "text-indigo-500", eyebrow: "text-indigo-700", activeIcon: "text-indigo-100", step: "text-indigo-200" },
-  { active: "border-violet-600 bg-violet-600 shadow-violet-200/60", icon: "text-violet-500", eyebrow: "text-violet-700", activeIcon: "text-violet-100", step: "text-violet-200" },
-  { active: "border-sky-600 bg-sky-600 shadow-sky-200/60", icon: "text-sky-500", eyebrow: "text-sky-700", activeIcon: "text-sky-100", step: "text-sky-200" },
-  { active: "border-amber-600 bg-amber-600 shadow-amber-200/60", icon: "text-amber-600", eyebrow: "text-amber-700", activeIcon: "text-amber-100", step: "text-amber-200" },
-  { active: "border-emerald-600 bg-emerald-600 shadow-emerald-200/60", icon: "text-emerald-600", eyebrow: "text-emerald-700", activeIcon: "text-emerald-100", step: "text-emerald-200" },
+  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
+  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
+  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
+  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
+  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
 ]
 
 function Field({
@@ -190,36 +194,46 @@ function StageLayout({
   const navigateToStage = React.useContext(SampleStageNavigationContext)
   const steps = [
     { label: "Request", Icon: ClipboardList },
-    { label: "Reserve & Issue", Icon: Package },
-    { label: "Delivery", Icon: Truck },
+    { label: "Issue", Icon: Package },
+    { label: "Delivery", Icon: Send },
     { label: "Review", Icon: MessageCircle },
     { label: "Closure", Icon: CheckCircle2 },
   ]
+  const stageGuides = [
+    { focus: "Capture who needs which samples and why.", next: "Coordinator reviews and accepts the request in Stage 2." },
+    { focus: "Reserve available stock, prepare the sample bag, and record each issue.", next: "Create a dispatch and hand samples to delivery in Stage 3." },
+    { focus: "Track pickup or delivery, then confirm received quantities and condition.", next: "Send received samples to the reviewer in Stage 4." },
+    { focus: "Record the reviewer’s decision, feedback, and any required changes.", next: "Agree return or retention, then reconcile samples in Stage 5." },
+    { focus: "Verify returns, update stock, and account for every issued unit.", next: "Close the request when all samples and approvals are reconciled." },
+  ]
   const theme = stageThemes[stage - 1]
+  const guide = stageGuides[stage - 1]
   return (
-    <main className="h-full min-h-0 w-full flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-4 py-5 sm:px-6 lg:px-8">
+    <main data-workflow-stage={stage} className="workflow-stage h-full min-h-0 w-full flex-1 overflow-y-auto overscroll-contain bg-slate-50 px-4 py-5 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-4">
-        <header className="flex flex-col gap-3 border-b border-slate-200/80 pb-4">
-          <div>
-            <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${theme.eyebrow}`}>Sample Management <span className="px-1 text-slate-300">/</span> Stage {stage} of 5</p>
-            <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
-            <p className="mt-1 max-w-3xl text-[13px] leading-5 text-slate-500">{subtitle}</p>
-          </div>
+        <header className="border-b border-slate-200 pb-4">
+          <p className={`text-xs font-semibold tracking-wide ${theme.eyebrow}`}>Sample Management <span className="px-1 text-slate-300">/</span> Stage {stage} of 5</p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-600">{subtitle}</p>
         </header>
-        <nav aria-label="Sample workflow stages" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <nav aria-label="Sample workflow stages" className="grid grid-cols-5 gap-1.5 sm:gap-2">
           {steps.map(({ label, Icon }, index) => (
             <button
               key={label}
               type="button"
               aria-current={index + 1 === stage ? "step" : undefined}
               onClick={() => navigateToStage(index + 1)}
-              className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-2.5 py-2 text-center text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${index + 1 === stage ? `${theme.active} text-white shadow-md` : "border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white"}`}
+              className={`flex min-h-10 items-center justify-center gap-1 rounded-md border px-1 py-2 text-center text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 ${theme.navRing} focus-visible:ring-offset-1 sm:gap-1.5 sm:px-2 sm:text-xs ${index + 1 === stage ? `${theme.active} text-white` : `${theme.navIdle} text-slate-700`}`}
             >
-              <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${index + 1 === stage ? theme.activeIcon : stageThemes[index].icon}`} />
-              <span><span className={`mr-1.5 text-[10px] ${index + 1 === stage ? theme.step : "text-slate-400"}`}>{String(index + 1).padStart(2, "0")}</span>{label}</span>
+              <Icon aria-hidden="true" className={`size-3.5 shrink-0 sm:size-4 ${index + 1 === stage ? "text-white" : "text-[#b1440f]"}`} />
+              <span className="truncate">{label}</span>
             </button>
           ))}
         </nav>
+        <aside className="flex flex-col gap-1 border-l-2 border-[#f45a1e] bg-white px-3 py-2.5 sm:flex-row sm:items-start sm:gap-2">
+          <p className={`shrink-0 text-xs font-semibold ${theme.guideLabel}`}>Stage {stage}:</p>
+          <p className="text-xs leading-5 text-slate-600"><span className="font-medium text-slate-800">{guide.focus}</span> <span className="text-slate-400">Next:</span> {guide.next}</p>
+        </aside>
         {children}
       </div>
     </main>
@@ -333,7 +347,7 @@ function StatTile({
   hint?: string
 }) {
   return (
-    <div className={`rounded-xl border p-3 ${STAT_TONES[tone]}`}>
+    <div className={`workflow-subcard rounded-xl border p-3 ${STAT_TONES[tone]}`}>
       <p className="text-[10px] font-bold uppercase tracking-wider opacity-75">{label}</p>
       <p className="mt-0.5 text-xl font-bold leading-6">{value}</p>
       {hint && <p className="mt-0.5 truncate text-[11px] opacity-70">{hint}</p>}
@@ -519,7 +533,7 @@ export function SwatchSamplePage() {
           </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/90 bg-white p-2.5">
+        <div className="workflow-subcard mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/90 bg-white p-2.5">
           <div className="relative min-w-[13rem] flex-1 sm:max-w-xs">
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -574,7 +588,7 @@ export function SwatchSamplePage() {
         </div>
 
         {visibleRequests.length ? (
-          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200/90 bg-white">
+          <div className="workflow-subcard mt-3 overflow-x-auto rounded-xl border border-slate-200/90 bg-white">
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className={`border-b ${brandHeadingBand} ${brandHeadingText} text-[11px] font-bold uppercase tracking-wider`}>
@@ -639,16 +653,16 @@ export function SwatchSamplePage() {
           </p>
         )}
       </section>
-      {formOpen && (
+      {formOpen && createPortal(
         <div className="fixed inset-0 z-50 flex animate-fade-in justify-end bg-slate-900/35 backdrop-blur-[2px] motion-reduce:animate-none" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}>
           <section role="dialog" aria-modal="true" aria-labelledby="new-request-title" className="flex h-full w-full max-w-3xl animate-panel-slide-in flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl motion-reduce:animate-none">
-            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-orange-200 bg-orange-50 px-5 py-4">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-600">Sample Management <span className="px-1 text-slate-300">/</span> Stage 1</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#b1440f]">Sample Management <span className="px-1 text-orange-300">/</span> Stage 1</p>
                 <h2 id="new-request-title" className="mt-1 text-lg font-semibold text-slate-900">New sample request</h2>
                 <p className="mt-0.5 text-xs text-slate-500">Fill in the details, pick samples, then save a draft or submit.</p>
               </div>
-              <button type="button" aria-label="Close new request" onClick={() => setFormOpen(false)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-800">
+              <button type="button" aria-label="Close new request" onClick={() => setFormOpen(false)} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-orange-800 transition hover:bg-orange-100 hover:text-orange-950">
                 <X aria-hidden="true" className="h-4 w-4" />
               </button>
             </header>
@@ -741,7 +755,8 @@ export function SwatchSamplePage() {
               <button type="button" className={buttonClass} onClick={() => save(true)}>Submit request</button>
             </footer>
           </section>
-        </div>
+        </div>,
+        globalThis.document.body,
       )}
       {selected && <p className="sr-only">Selected request {selected.id}</p>}
     </StageLayout>
@@ -840,15 +855,15 @@ export function SelectIssuePage() {
         {!request ? <p className="mt-4 text-sm text-slate-500">Submitted requests will appear here for coordinator acceptance.</p> : (
           <>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+              <div className="workflow-subcard rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Project</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{request.project}</p>
               </div>
-              <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+              <div className="workflow-subcard rounded-xl border border-violet-100 bg-violet-50/60 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-violet-500">Requester</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{request.requester}</p>
               </div>
-              <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3">
+              <div className="workflow-subcard rounded-xl border border-sky-100 bg-sky-50/60 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-sky-500">Request ID</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{request.id}</p>
               </div>
@@ -917,7 +932,7 @@ export function SelectIssuePage() {
               </div>
             )}
             {tab === "bag" && canStage && (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="workflow-subcard mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="min-w-[14rem] flex-1">
                     <Field label="Bag name"><input className={inputClass} value={bagName} onChange={(e) => setBagName(e.target.value)} /></Field>
@@ -929,7 +944,7 @@ export function SelectIssuePage() {
                     const row = allocation[request.id]?.lines[line.itemId]
                     const remainingToBag = Math.max(0, (row?.reserved ?? 0) - stagedUnissued(line.itemId))
                     return (
-                      <div key={line.itemId} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 transition hover:border-indigo-200 hover:bg-indigo-50/40">
+                      <div key={line.itemId} className="workflow-subcard flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 transition hover:border-indigo-200 hover:bg-indigo-50/40">
                         <SampleThumb name={line.name} color={colorOf(line.itemId)} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold text-slate-900">{line.name}</p>
@@ -954,7 +969,7 @@ export function SelectIssuePage() {
 
             {tab === "issue" && canStage && (
               <div className="mt-4 space-y-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="workflow-subcard rounded-xl border border-slate-200 bg-white p-4">
                   <h3 className="text-sm font-semibold text-slate-900">Issue details</h3>
                   <p className="mt-0.5 text-xs text-slate-500">Who takes the samples, their condition now, and when they come back.</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
@@ -968,7 +983,7 @@ export function SelectIssuePage() {
                   {bags.map((bag) => {
                     const issueTotalByLine = new Map(document.issues.filter((issue) => issue.bagId === bag.id).flatMap((issue) => issue.lines).map((line) => [line.bagLineId, (document.issues.filter((issue) => issue.bagId === bag.id).flatMap((issue) => issue.lines).filter((issuedLine) => issuedLine.bagLineId === line.bagLineId).reduce((sum, issuedLine) => sum + issuedLine.quantity, 0))]))
                     return (
-                      <div key={bag.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                      <div key={bag.id} className="workflow-subcard rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                         <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
                           <h4 className="font-semibold text-slate-900">{bag.name}</h4>
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{bag.id}</span>
@@ -979,7 +994,7 @@ export function SelectIssuePage() {
                             const issued = issueTotalByLine.get(line.id) ?? 0
                             const max = Math.min(line.quantity - issued, row?.reserved ?? 0)
                             return (
-                              <div key={line.id} className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/80 p-2.5">
+                              <div key={line.id} className="workflow-subcard flex min-w-0 items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/80 p-2.5">
                                 <SampleThumb name={line.name} color={colorOf(line.itemId)} size="sm" />
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-semibold text-slate-900">{line.name}</p>
@@ -1194,7 +1209,7 @@ export function DeliveryReceiptPage() {
             {dispatches.map((entry) => {
               const nextStatus = DISPATCH_STATUSES[DISPATCH_STATUSES.indexOf(entry.status) + 1]
               return (
-                <div key={entry.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                <div key={entry.id} className="workflow-subcard flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold text-slate-900">{entry.id}</p>
@@ -1233,7 +1248,7 @@ export function DeliveryReceiptPage() {
                 const already = document.receipts.filter((receipt) => receipt.dispatchId === selectedDispatch.id).flatMap((receipt) => receipt.lines).filter((entry) => entry.itemId === line.itemId).reduce((sum, entry) => sum + entry.receivedQuantity, 0)
                 const remaining = Math.max(0, line.quantity - already)
                 return (
-                  <div key={line.itemId} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 lg:grid-cols-[minmax(0,2fr)_7rem_7rem_minmax(0,2fr)] lg:items-end">
+                  <div key={line.itemId} className="workflow-subcard grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 lg:grid-cols-[minmax(0,2fr)_7rem_7rem_minmax(0,2fr)] lg:items-end">
                     <div className="flex min-w-0 items-center gap-3">
                       <SampleThumb name={line.name} color={colorOf(line.itemId)} size="sm" />
                       <div className="min-w-0">
@@ -1354,7 +1369,7 @@ export function ReviewsApprovalsPage() {
         </div>
         {!reviews.length && <p className="mt-4 text-sm text-slate-500">No confirmed received samples are ready for review yet.</p>}
         {review && <div className="mt-5 grid gap-6 lg:grid-cols-2">
-          <div className="space-y-3 rounded-lg border border-slate-200 p-4">
+          <div className="workflow-subcard space-y-3 rounded-lg border border-slate-200 p-4">
             <h3 className="font-semibold">Sample review & feedback</h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Reviewer" required><select className={inputClass} value={reviewer} onChange={(e) => setReviewer(e.target.value)}><option value="">Select an authorized reviewer</option>{reviewers.map((name) => <option key={name}>{name}</option>)}</select></Field>
@@ -1367,16 +1382,16 @@ export function ReviewsApprovalsPage() {
             </div>
             <Field label="Reviewer comments"><textarea className={textAreaClass} value={comments} onChange={(e) => setComments(e.target.value)} /></Field>
             {(decision === "Revision Required" || followUp === "Resubmit") && <Field label="Required changes" required><textarea className={textAreaClass} value={feedback} onChange={(e) => setFeedback(e.target.value)} /></Field>}
-            <div className="flex flex-wrap gap-2"><button className={secondaryButtonClass} onClick={beginReview}>Start review / save draft</button><button className={buttonClass} onClick={submitReview}>Record review decision</button></div>
+            <div className="flex flex-wrap gap-2"><button className={reviewSecondaryButtonClass} onClick={beginReview}>Start review / save draft</button><button className={reviewPrimaryButtonClass} onClick={submitReview}>Record review decision</button></div>
           </div>
-          <div className="space-y-3 rounded-lg border border-slate-200 p-4">
+          <div className="workflow-subcard space-y-3 rounded-lg border border-slate-200 p-4">
             <h3 className="font-semibold">Final decision</h3>
             {cycle ? <div className="rounded-lg bg-slate-50 p-3 text-sm"><p>Latest cycle {cycle.cycle}: <strong>{cycle.decision || "Awaiting review"}</strong> · {cycle.finalApproval}</p><p className="mt-1 text-slate-500">{cycle.feedback || cycle.comments || "No comments recorded."}</p></div> : <p className="text-sm text-slate-500">Record a review decision before finalizing.</p>}
             <Field label="Final decision"><select className={inputClass} value={finalApproval} onChange={(e) => setFinalApproval(e.target.value as typeof finalApproval)}><option>Approved</option><option>Rejected</option><option>Changes Required</option><option>Not Required</option></select></Field>
             {finalApproval !== "Not Required" && <Field label="Decision recorded by"><input className={inputClass} value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} /></Field>}
             <Field label="Next responsible coordinator"><input className={inputClass} value={coordinator || request?.assignedCoordinator || ""} onChange={(e) => setCoordinator(e.target.value)} /></Field>
             <Field label="Final comments"><textarea className={textAreaClass} value={finalComments} onChange={(e) => setFinalComments(e.target.value)} /></Field>
-            <button className={secondaryButtonClass} onClick={submitFinal} disabled={!cycle?.decision}>Record final decision</button>
+            <button className={reviewSecondaryButtonClass} onClick={submitFinal} disabled={!cycle?.decision}>Record final decision</button>
             <div className="border-t border-slate-100 pt-3"><p className="text-sm font-semibold">Review history</p>{review.cycles.length ? <ol className="mt-2 space-y-2">{review.cycles.map((entry) => <li key={entry.cycle} className="text-sm"><StatusBadge>{entry.decision || entry.status}</StatusBadge><span className="ml-2">Cycle {entry.cycle} · {entry.reviewer} · {entry.reviewDate}</span><p className="mt-1 text-xs text-slate-500">{entry.feedback || entry.comments || "No feedback"}</p></li>)}</ol> : <p className="mt-2 text-xs text-slate-500">No decisions recorded.</p>}</div>
           </div>
         </div>}
@@ -1447,7 +1462,7 @@ function ReturnPlanForm({
   const remainingDisposition = sample.issuedQuantity - dispositionTotal(sample)
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+    <div className="workflow-subcard space-y-4 rounded-lg border border-slate-200 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <SampleThumb name={sample.name} color={inventory.find((item) => item.id === sample.itemId)?.color} />

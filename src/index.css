@@ -31,6 +31,37 @@
   }
 }
 
+.workflow-stage {
+  --workflow-card-bg: #fffaf6;
+  --workflow-card-border: #f0e2d6;
+}
+
+.workflow-stage[data-workflow-stage="2"] {
+  --workflow-card-bg: #fffaf1;
+  --workflow-card-border: #eee2cb;
+}
+
+.workflow-stage[data-workflow-stage="3"] {
+  --workflow-card-bg: #fff8f4;
+  --workflow-card-border: #f0dfd5;
+}
+
+.workflow-stage[data-workflow-stage="4"] {
+  --workflow-card-bg: #fff9f2;
+  --workflow-card-border: #eee0d0;
+}
+
+.workflow-stage[data-workflow-stage="5"] {
+  --workflow-card-bg: #fbf8f2;
+  --workflow-card-border: #e9e1d3;
+}
+
+.workflow-stage .workflow-card,
+.workflow-stage .workflow-subcard {
+  border-color: var(--workflow-card-border);
+  background-color: var(--workflow-card-bg);
+}
+
 .shell-interaction {
   transition:
     background-color 160ms ease,
