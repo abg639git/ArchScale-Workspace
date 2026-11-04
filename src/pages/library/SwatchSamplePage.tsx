@@ -1294,6 +1294,13 @@ function readStage3Form(form: HTMLFormElement, current: Stage3Delivery): Stage3D
   }
 }
 
+function getSuggestedReceiptStatus(receivedQuantity: number, issuedQuantity: number): string {
+  if (receivedQuantity === 0) return "Pending"
+  if (receivedQuantity === issuedQuantity) return "Fully Received"
+  if (receivedQuantity > 0 && receivedQuantity < issuedQuantity) return "Partially Received"
+  return "Pending"
+}
+
 function validateStage3Receipt(delivery: Stage3Delivery, issuedQuantity: number): string | null {
   const required: Array<[string, string]> = [
     ["Pickup Location", delivery.pickupLocation],
@@ -1317,7 +1324,7 @@ function validateStage3Receipt(delivery: Stage3Delivery, issuedQuantity: number)
   if (delivery.receiptStatus === "Partially Received" && (delivery.receivedQuantity <= 0 || delivery.receivedQuantity >= issuedQuantity)) {
     return "Partially Received requires a received quantity greater than zero and less than the issued quantity."
   }
-  if ((delivery.receiptStatus === "Damaged" || delivery.receiptStatus === "Rejected") && !delivery.receiptNotes.trim()) {
+  if ((delivery.receivedCondition === "Damaged" || delivery.receiptStatus === "Damaged" || delivery.receiptStatus === "Rejected") && !delivery.receiptNotes.trim()) {
     return "Add receipt notes for damaged or rejected samples."
   }
   return null
@@ -1330,6 +1337,7 @@ function Stage3Field({
   required = false,
   type = "text",
   min,
+  max,
   multiline = false,
 }: {
   label: string
@@ -1338,6 +1346,7 @@ function Stage3Field({
   required?: boolean
   type?: string
   min?: number
+  max?: number
   multiline?: boolean
 }) {
   const className = cn(inputClass, multiline && "h-auto min-h-20 resize-y py-2")
@@ -1346,7 +1355,7 @@ function Stage3Field({
       <span className={labelClass}>{label}{required && <span className="ml-1 text-destructive">*</span>}</span>
       {multiline
         ? <textarea name={label} required={required} value={value} onChange={(event) => onChange(event.target.value)} rows={3} className={className} />
-        : <input name={label} required={required} type={type} min={min} step={type === "number" ? "1" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className={className} />}
+        : <input name={label} required={required} type={type} min={min} max={max} step={type === "number" ? "1" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className={className} />}
     </label>
   )
 }
@@ -1580,10 +1589,15 @@ export function DeliveryReceiptPage() {
       setDeliveryError(validation)
       return
     }
+    const confirmedAt = currentTimestamp()
+    const statusHistory = delivery.dispatchStatus === "Delivered"
+      ? delivery.history
+      : [...delivery.history, { action: "Dispatch status updated to Delivered", at: confirmedAt }]
     const updatedDelivery: Stage3Delivery = {
       ...values,
-      receiptConfirmedAt: currentTimestamp(),
-      history: [...delivery.history, { action: `Receipt confirmed: ${values.receiptStatus}`, at: currentTimestamp() }],
+      dispatchStatus: "Delivered",
+      receiptConfirmedAt: confirmedAt,
+      history: [...statusHistory, { action: `Receipt confirmed: ${values.receiptStatus}`, at: confirmedAt }],
     }
     const next = dispatches.map((dispatch) => dispatch.id === activeDispatch.id
       ? { ...dispatch, delivery: updatedDelivery }
@@ -1659,6 +1673,7 @@ export function DeliveryReceiptPage() {
                   <p className="mt-1 text-sm text-emerald-900">
                     {delivery.receivedQuantity} received · {outstandingQuantity} outstanding · {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(delivery.receiptConfirmedAt))}
                   </p>
+                  <p className="mt-1 text-sm text-emerald-900">Condition at receipt: {delivery.receivedCondition} · Dispatch status: {delivery.dispatchStatus}</p>
                 </div>
                 <Stage3History history={delivery.history} />
                 <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("archscale:navigate", {
@@ -1700,10 +1715,13 @@ export function DeliveryReceiptPage() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <Stage3Select label="Receipt Status" value={delivery.receiptStatus} options={receiptStatuses} required onChange={(receiptStatus) => updateDelivery({ receiptStatus })} />
                     <Stage3Field label="Received Date" value={delivery.receivedDate} type="date" onChange={(receivedDate) => updateDelivery({ receivedDate })} />
-                    <Stage3Field label={`Received Quantity (Issued: ${issuedQuantity})`} value={delivery.receivedQuantity} type="number" min={0} required onChange={(value) => {
+                    <Stage3Field label={`Received Quantity (Issued: ${issuedQuantity})`} value={delivery.receivedQuantity} type="number" min={0} max={issuedQuantity} required onChange={(value) => {
                       const receivedQuantity = Number(value)
                       if (Number.isInteger(receivedQuantity) && receivedQuantity >= 0 && receivedQuantity <= issuedQuantity) {
-                        updateDelivery({ receivedQuantity })
+                        updateDelivery({
+                          receivedQuantity,
+                          receiptStatus: getSuggestedReceiptStatus(receivedQuantity, issuedQuantity),
+                        })
                         setDeliveryError("")
                       } else {
                         setDeliveryError(`Received quantity must be between 0 and ${issuedQuantity}.`)
@@ -1712,11 +1730,11 @@ export function DeliveryReceiptPage() {
                     <Stage3Select label="Received Condition" value={delivery.receivedCondition} options={receivedConditions} required onChange={(receivedCondition) => updateDelivery({ receivedCondition })} />
                     <div className="sm:col-span-2"><Stage3Field label="Receipt Notes (Optional)" value={delivery.receiptNotes} multiline onChange={(receiptNotes) => updateDelivery({ receiptNotes })} /></div>
                   </div>
-                  <p className="mt-3 text-sm text-muted-foreground">Outstanding quantity: <strong>{outstandingQuantity}</strong> of {issuedQuantity}</p>
+                  <p className="mt-3 text-sm text-muted-foreground">Condition at issue is shown in the read-only sample summary above. Condition at receipt is recorded separately below. Outstanding quantity: <strong>{outstandingQuantity}</strong> of {issuedQuantity}</p>
                 </section>
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs text-muted-foreground">Damaged or rejected receipt statuses require notes. Fully received requires the full issued quantity and a recorded condition.</p>
+                  <p className="text-xs text-muted-foreground">Receipt status is suggested from the received quantity. Damaged condition or Damaged/Rejected receipt status requires notes.</p>
                   <div className="flex gap-2">
                     <button type="button" onClick={(event) => saveDeliveryDraft(event.currentTarget.form!)} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Save as Draft</button>
                     <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">Confirm Receipt</button>
