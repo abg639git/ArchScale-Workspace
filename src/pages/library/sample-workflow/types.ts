@@ -166,7 +166,7 @@ export type SampleDispatch = {
   history: HistoryEntry[]
 }
 
-export type ReceiptStatus = "Full" | "Partial" | "Discrepancy"
+export type ReceiptStatus = "Pending" | "Full" | "Partial" | "Discrepancy"
 
 export type ReceiptLine = {
   /** receipt_line_id */
@@ -220,7 +220,7 @@ export type ReviewStatus =
   | "Revision Requested"
   | "Finalized"
 
-export type FinalApproval = "Pending" | "Approved" | "Not Required"
+export type FinalApproval = "Pending" | "Approved" | "Rejected" | "Changes Required" | "Not Required"
 
 export type ReviewerRole = "Requester" | "Studio" | "Client" | "Project Owner"
 
@@ -281,7 +281,7 @@ export type ReviewNotification = {
 
 /* ------------------------------------------------------------------ Stage 5 */
 
-export type DispositionType = "Returned" | "Retained" | "Consumed" | "Lost" | "Converted"
+export type DispositionType = "Returned" | "Damaged" | "Retained" | "Consumed" | "Lost" | "Converted"
 
 export type Disposition = {
   id: string
@@ -439,6 +439,7 @@ export const RETURN_CONDITIONS: ReturnCondition[] = ["Good", "Damaged", "Unusabl
 
 export const DISPOSITION_TYPES: DispositionType[] = [
   "Returned",
+  "Damaged",
   "Retained",
   "Consumed",
   "Lost",

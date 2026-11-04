@@ -19,7 +19,6 @@ import type { InventoryItem } from "@/pages/products/inventory-data"
 import type {
   ClosureRecord,
   ClosureSample,
-  Disposition,
   ReceiptLine,
   RequestLine,
   ReviewCycle,
@@ -388,12 +387,14 @@ export const receiptMissing = (line: ReceiptLine): number =>
   Math.max(0, line.issuedQuantity - line.receivedQuantity)
 
 /** Suggested receipt status from quantities: full / partial / discrepancy. */
-export function suggestReceiptStatus(lines: ReceiptLine[]): "Full" | "Partial" | "Discrepancy" {
+export function suggestReceiptStatus(lines: ReceiptLine[]): "Pending" | "Full" | "Partial" | "Discrepancy" {
   const issued = lines.reduce((sum, line) => sum + line.issuedQuantity, 0)
   const received = lines.reduce((sum, line) => sum + line.receivedQuantity, 0)
   const damaged = lines.reduce((sum, line) => sum + line.damagedQuantity, 0)
+  if (received === 0) return "Pending"
+  if (received >= issued) return "Full"
   if (damaged > 0) return "Discrepancy"
-  return received >= issued ? "Full" : "Partial"
+  return "Partial"
 }
 
 /** Per-line receipt rules: received ≤ issued, damaged ≤ received, notes for exceptions. */
@@ -431,6 +432,12 @@ export function validateReceipt(draft: ReceiptDraft): string | null {
   const missingTotal = Math.max(0, issuedTotal - receivedTotal)
   if (receivedTotal > issuedTotal) return "Total received quantity cannot exceed the issued quantity."
 
+  if (draft.status === "Pending" && receivedTotal > 0) {
+    return "Pending receipt requires zero received units."
+  }
+  if (draft.status !== "Pending" && receivedTotal === 0) {
+    return "Zero received units must be recorded as Pending."
+  }
   if (draft.status === "Full" && missingTotal > 0) {
     return `Full receipt requires every issued unit. ${missingTotal} unit(s) are outstanding — choose Partial or Discrepancy.`
   }
@@ -456,10 +463,7 @@ export const latestCycle = (review?: { cycles: ReviewCycle[] }): ReviewCycle | u
 
 export const isFinalized = (review?: { cycles: ReviewCycle[] }): boolean => {
   const cycle = latestCycle(review)
-  return Boolean(
-    cycle && cycle.status === "Finalized" &&
-      (cycle.finalApproval === "Approved" || cycle.finalApproval === "Not Required")
-  )
+  return Boolean(cycle && cycle.status === "Finalized" && cycle.finalApproval !== "Pending")
 }
 
 /**
@@ -523,19 +527,18 @@ export type FinalDraft = {
 export function validateFinalApproval(draft: FinalDraft): string | null {
   if (!draft.decision) return "Record a review decision before the final approval."
   if (!draft.finalApproval) return "Select a final approval status."
-  if (draft.finalApproval === "Approved" && !draft.decisionDate) {
-    return "Enter the decision date for the final approval."
+  if (draft.finalApproval !== "Not Required" && !draft.decisionDate) {
+    return "Enter the date for the final decision."
   }
-  if (draft.finalApproval === "Approved" && !draft.approvedBy.trim()) {
-    return "Record the authorised approver for the final approval."
+  if (draft.finalApproval !== "Not Required" && !draft.approvedBy.trim()) {
+    return "Record the authorised decision maker."
   }
   if (!draft.coordinator.trim()) return "Select the next responsible coordinator."
   if (
-    (draft.decision === "Rejected" || draft.decision === "Revision Required") &&
-    !draft.finalComments.trim() &&
-    draft.finalApproval === "Approved"
+    (draft.finalApproval === "Rejected" || draft.finalApproval === "Changes Required") &&
+    !draft.finalComments.trim()
   ) {
-    return "Add final comments for an approved rejected/revision outcome."
+    return "Add comments explaining the final decision."
   }
   return null
 }
@@ -674,9 +677,20 @@ export function closureBlockers(context: ClosureContext): BlockerCheck {
     const returnedDisposition = sample.dispositions
       .filter((entry) => entry.type === "Returned")
       .reduce((sum, entry) => sum + entry.quantity, 0)
-    if (returnedDisposition !== sample.receivedBackQuantity) {
+    const damagedDisposition = sample.dispositions
+      .filter((entry) => entry.type === "Damaged")
+      .reduce((sum, entry) => sum + entry.quantity, 0)
+    if (sample.conditionAtReturn === "Good" && returnedDisposition !== sample.receivedBackQuantity) {
       blockers.push(
         `${sample.name}: "Returned" disposition (${returnedDisposition}) must equal the verified return quantity (${sample.receivedBackQuantity}).`
+      )
+    }
+    if (
+      (sample.conditionAtReturn === "Damaged" || sample.conditionAtReturn === "Unusable") &&
+      damagedDisposition !== sample.receivedBackQuantity
+    ) {
+      blockers.push(
+        `${sample.name}: "Damaged" disposition (${damagedDisposition}) must equal the verified damaged return quantity (${sample.receivedBackQuantity}).`
       )
     }
 
@@ -951,5 +965,3 @@ export function formatDate(value?: string): string {
   if (Number.isNaN(date.getTime())) return "—"
   return new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(date)
 }
-
-

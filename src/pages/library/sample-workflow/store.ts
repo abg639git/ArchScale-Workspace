@@ -251,7 +251,6 @@ export type ResetMode = "demo" | "empty"
 
 /** Clears the workflow (and optionally the demo seed) for a clean test run. */
 export function resetWorkflow(mode: ResetMode): string | null {
-  const items = getInventory()
   if (mode === "empty") {
     const empty = emptyWorkflowDocument()
     workflowCache = empty

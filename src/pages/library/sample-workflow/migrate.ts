@@ -86,7 +86,7 @@ const mapRequestStatus = (status: unknown): RequestStatus => {
   }
 }
 
-const mapMethod = (value: unknown): DeliveryMethod => {
+const mapMethod = (value: unknown): DeliveryMethod | "" => {
   const method = str(value)
   if (method === "Pickup") return "Self Pickup"
   if (method === "Hand delivery") return "Runner"
@@ -96,7 +96,7 @@ const mapMethod = (value: unknown): DeliveryMethod => {
   return method ? "Courier" : ""
 }
 
-const mapPickup = (value: unknown): PickupLocation => {
+const mapPickup = (value: unknown): PickupLocation | "" => {
   const location = str(value)
   if (location === "Studio" || location === "Store-Warehouse" || location === "Vendor") return location
   if (!location) return ""

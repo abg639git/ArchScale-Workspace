@@ -718,7 +718,7 @@ export function buildDemoWorkflow(currentItems: InventoryItem[]): DemoSeed {
 
   const document: WorkflowDocument = {
     ...emptyWorkflowDocument(),
-    requests: [one.request, two.request, three.request, four.request, five.request],
+    requests: [one, two.request, three.request, four.request, five.request],
     bags: [...two.bags, three.bag, four.bag, five.bag],
     issues,
     dispatches: [three.dispatch, four.dispatch, five.dispatch],
