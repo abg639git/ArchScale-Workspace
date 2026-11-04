@@ -94,6 +94,7 @@ function validateRequest(request: MaterialRequest): string | null {
   ].filter(([, value]) => !value.trim()).map(([label]) => label)
 
   if (missing.length) return `Complete the required fields: ${missing.join(", ")}.`
+  if (delivery.receiptStatus === "Pending") return "Select a receipt status other than Pending before confirming receipt."
   if (!Number.isInteger(request.quantity) || request.quantity < 1) {
     return "Quantity must be a whole number greater than zero."
   }
@@ -1003,6 +1004,174 @@ type Stage2Dispatch = {
   expectedReturnDate: string
   createdAt: string
   status: "Pending dispatch"
+  delivery?: Stage3Delivery
+}
+
+type Stage3Delivery = {
+  pickupLocation: string
+  deliveryMethod: string
+  deliveryAddress: string
+  contactPerson: string
+  contactNumber: string
+  expectedDeliveryDate: string
+  courierName: string
+  trackingNumber: string
+  dispatchDate: string
+  dispatchStatus: string
+  receiptStatus: string
+  receivedDate: string
+  receivedQuantity: number
+  receivedCondition: string
+  receiptNotes: string
+  receiptConfirmedAt?: string
+  history: Array<{ action: string; at: string }>
+}
+
+const deliveryMethods = ["Courier", "Pickup", "Hand delivery"]
+const dispatchStatuses = ["Pending", "Ready for Dispatch", "Dispatched", "In Transit", "Delivered", "Failed"]
+const receiptStatuses = ["Pending", "Partially Received", "Fully Received", "Damaged", "Rejected"]
+const receivedConditions = ["Good", "Damaged", "Incomplete"]
+
+function createDeliveryDraft(dispatch?: Stage2Dispatch): Stage3Delivery {
+  return {
+    pickupLocation: "",
+    deliveryMethod: "",
+    deliveryAddress: dispatch?.request.deliveryAddress ?? "",
+    contactPerson: dispatch?.request.requester ?? "",
+    contactNumber: "",
+    expectedDeliveryDate: "",
+    courierName: "",
+    trackingNumber: "",
+    dispatchDate: "",
+    dispatchStatus: "Pending",
+    receiptStatus: "Pending",
+    receivedDate: "",
+    receivedQuantity: 0,
+    receivedCondition: "",
+    receiptNotes: "",
+    history: [],
+  }
+}
+
+function readStage3Form(form: HTMLFormElement, current: Stage3Delivery): Stage3Delivery {
+  const data = new FormData(form)
+  const read = (name: string, fallback: string) => String(data.get(name) ?? fallback)
+  const quantity = Number(read("Received Quantity", String(current.receivedQuantity)))
+  return {
+    ...current,
+    pickupLocation: read("Pickup Location", current.pickupLocation),
+    deliveryMethod: read("Delivery Method", current.deliveryMethod),
+    deliveryAddress: read("Delivery Address", current.deliveryAddress),
+    contactPerson: read("Contact Person", current.contactPerson),
+    contactNumber: read("Contact Number", current.contactNumber),
+    expectedDeliveryDate: read("Expected Delivery Date", current.expectedDeliveryDate),
+    courierName: read("Courier Name (Optional)", current.courierName),
+    trackingNumber: read("Tracking Number (Optional)", current.trackingNumber),
+    dispatchDate: read("Dispatch Date", current.dispatchDate),
+    dispatchStatus: read("Dispatch Status", current.dispatchStatus),
+    receiptStatus: read("Receipt Status", current.receiptStatus),
+    receivedDate: read("Received Date", current.receivedDate),
+    receivedQuantity: Number.isFinite(quantity) ? quantity : current.receivedQuantity,
+    receivedCondition: read("Received Condition", current.receivedCondition),
+    receiptNotes: read("Receipt Notes (Optional)", current.receiptNotes),
+  }
+}
+
+function validateStage3Receipt(delivery: Stage3Delivery, issuedQuantity: number): string | null {
+  const required: Array<[string, string]> = [
+    ["Pickup Location", delivery.pickupLocation],
+    ["Delivery Method", delivery.deliveryMethod],
+    ["Delivery Address", delivery.deliveryAddress],
+    ["Contact Person", delivery.contactPerson],
+    ["Expected Delivery Date", delivery.expectedDeliveryDate],
+    ["Dispatch Status", delivery.dispatchStatus],
+    ["Receipt Status", delivery.receiptStatus],
+    ["Received Condition", delivery.receivedCondition],
+  ]
+  const missing = required.filter(([, value]) => !value.trim()).map(([label]) => label)
+  if (missing.length) return `Complete the required fields: ${missing.join(", ")}.`
+  if (!Number.isInteger(delivery.receivedQuantity) || delivery.receivedQuantity < 0 || delivery.receivedQuantity > issuedQuantity) {
+    return `Received quantity must be a whole number between 0 and the issued quantity (${issuedQuantity}).`
+  }
+  if (delivery.receiptStatus === "Fully Received" && delivery.receivedQuantity !== issuedQuantity) {
+    return `Fully Received requires the full issued quantity (${issuedQuantity}).`
+  }
+  if (delivery.receiptStatus === "Partially Received" && (delivery.receivedQuantity <= 0 || delivery.receivedQuantity >= issuedQuantity)) {
+    return "Partially Received requires a received quantity greater than zero and less than the issued quantity."
+  }
+  if ((delivery.receiptStatus === "Damaged" || delivery.receiptStatus === "Rejected") && !delivery.receiptNotes.trim()) {
+    return "Add receipt notes for damaged or rejected samples."
+  }
+  return null
+}
+
+function Stage3Field({
+  label,
+  value,
+  onChange,
+  required = false,
+  type = "text",
+  min,
+  multiline = false,
+}: {
+  label: string
+  value: string | number
+  onChange: (value: string) => void
+  required?: boolean
+  type?: string
+  min?: number
+  multiline?: boolean
+}) {
+  const className = cn(inputClass, multiline && "h-auto min-h-20 resize-y py-2")
+  return (
+    <label className="block min-w-0">
+      <span className={labelClass}>{label}{required && <span className="ml-1 text-destructive">*</span>}</span>
+      {multiline
+        ? <textarea name={label} required={required} value={value} onChange={(event) => onChange(event.target.value)} rows={3} className={className} />
+        : <input name={label} required={required} type={type} min={min} step={type === "number" ? "1" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className={className} />}
+    </label>
+  )
+}
+
+function Stage3Select({
+  label,
+  value,
+  options,
+  onChange,
+  required = false,
+}: {
+  label: string
+  value: string
+  options: string[]
+  onChange: (value: string) => void
+  required?: boolean
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className={labelClass}>{label}{required && <span className="ml-1 text-destructive">*</span>}</span>
+      <select name={label} required={required} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>
+        <option value="">Select {label.toLowerCase()}</option>
+        {options.map((option) => <option key={option}>{option}</option>)}
+      </select>
+    </label>
+  )
+}
+
+function Stage3History({ history }: { history: Stage3Delivery["history"] }) {
+  if (history.length === 0) return null
+  return (
+    <section className="rounded-lg border border-border p-4">
+      <h3 className="text-sm font-semibold">Delivery &amp; Receipt History</h3>
+      <ul className="mt-2 space-y-2">
+        {history.slice().reverse().map((entry, index) => (
+          <li key={`${entry.at}-${index}`} className="flex flex-wrap justify-between gap-2 text-xs">
+            <span>{entry.action}</span>
+            <time className="text-muted-foreground">{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.at))}</time>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 function getInventoryLocations(item?: InventoryItem): string[] {
@@ -1036,7 +1205,206 @@ function EmptySampleStagePage() {
 }
 
 export function DeliveryReceiptPage() {
-  return <EmptySampleStagePage />
+  const [dispatches, setDispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
+  const [activeDispatchId, setActiveDispatchId] = React.useState("")
+  const [deliveryError, setDeliveryError] = React.useState("")
+  const [deliveryFeedback, setDeliveryFeedback] = React.useState("")
+  const activeDispatch = dispatches.find((dispatch) => dispatch.id === activeDispatchId)
+  const delivery = activeDispatch?.delivery ?? createDeliveryDraft(activeDispatch)
+  const issuedQuantity = activeDispatch?.samples.reduce((sum, line) => sum + line.issuedQuantity, 0) ?? 0
+  const outstandingQuantity = Math.max(0, issuedQuantity - (delivery.receivedQuantity || 0))
+
+  const updateDelivery = (update: Partial<Stage3Delivery>) => {
+    if (!activeDispatch) return
+    const history = update.dispatchStatus && update.dispatchStatus !== delivery.dispatchStatus
+      ? [...delivery.history, { action: `Dispatch status updated to ${update.dispatchStatus}`, at: currentTimestamp() }]
+      : delivery.history
+    const updated: Stage2Dispatch = {
+      ...activeDispatch,
+      delivery: { ...delivery, ...update, history },
+    }
+    const next = dispatches.map((dispatch) => dispatch.id === updated.id ? updated : dispatch)
+    try {
+      window.localStorage.setItem(stage2DispatchesStorageKey, JSON.stringify(next))
+    } catch {
+      setDeliveryError("Delivery updates could not be saved in this browser.")
+      return
+    }
+    setDispatches(next)
+    setDeliveryError("")
+  }
+
+  const saveDeliveryDraft = (form: HTMLFormElement) => {
+    if (!activeDispatch) return
+    const values = readStage3Form(form, delivery)
+    updateDelivery({
+      ...values,
+      history: [...delivery.history, { action: "Delivery details saved as draft", at: currentTimestamp() }],
+    })
+    setDeliveryFeedback("Delivery details saved as draft.")
+  }
+
+  const confirmReceipt = (form: HTMLFormElement) => {
+    if (!activeDispatch) return
+    const values = readStage3Form(form, delivery)
+    const issueQty = activeDispatch.samples.reduce((sum, line) => sum + line.issuedQuantity, 0)
+    const validation = validateStage3Receipt(values, issueQty)
+    if (validation) {
+      setDeliveryError(validation)
+      return
+    }
+    const updatedDelivery: Stage3Delivery = {
+      ...values,
+      receiptConfirmedAt: currentTimestamp(),
+      history: [...delivery.history, { action: `Receipt confirmed: ${values.receiptStatus}`, at: currentTimestamp() }],
+    }
+    const next = dispatches.map((dispatch) => dispatch.id === activeDispatch.id
+      ? { ...dispatch, delivery: updatedDelivery }
+      : dispatch)
+    try {
+      window.localStorage.setItem(stage2DispatchesStorageKey, JSON.stringify(next))
+    } catch {
+      setDeliveryError("Receipt confirmation could not be saved in this browser.")
+      return
+    }
+    setDispatches(next)
+    setDeliveryError("")
+    setDeliveryFeedback(`Receipt confirmed for ${activeDispatch.request.id}.`)
+  }
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">Stage 3</p>
+          <h1 className="mt-1 text-xl font-semibold">Delivery &amp; Receipt</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Track dispatch progress and confirm received quantities and condition.</p>
+        </div>
+        <label className="min-w-[220px] text-xs font-medium">
+          Stage 2 dispatch
+          <select aria-label="Stage 2 dispatch" value={activeDispatchId} onChange={(event) => {
+            setActiveDispatchId(event.target.value)
+            setDeliveryError("")
+            setDeliveryFeedback("")
+          }} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm" disabled={dispatches.length === 0}>
+            <option value="">Select a Stage 2 dispatch</option>
+            {dispatches.map((dispatch) => (
+              <option key={dispatch.id} value={dispatch.id}>{dispatch.request.id} · {dispatch.request.project}</option>
+            ))}
+          </select>
+        </label>
+      </header>
+
+      <main className="min-h-0 flex-1 overflow-y-auto p-5">
+        {!activeDispatch ? (
+          <EmptyStage2 message="No Stage 2 dispatches are available yet. Issued samples and their request details will appear here after Stage 2 creates a dispatch." />
+        ) : (
+          <div className="space-y-4">
+            <section className="rounded-lg border border-border bg-muted/20 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-primary">{activeDispatch.id} · Request {activeDispatch.request.id}</p>
+                  <h2 className="mt-1 font-semibold">{activeDispatch.request.project}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Requester: {activeDispatch.request.requester} · Coordinator: {activeDispatch.request.assignedCoordinator}</p>
+                </div>
+                <div className="text-sm">
+                  <p><span className="text-muted-foreground">Issued quantity:</span> <strong>{issuedQuantity}</strong></p>
+                  <p><span className="text-muted-foreground">Received:</span> <strong>{delivery.receivedQuantity || 0}</strong></p>
+                  <p><span className="text-muted-foreground">Outstanding:</span> <strong>{outstandingQuantity}</strong></p>
+                </div>
+              </div>
+              <div className="mt-3 overflow-x-auto rounded-md border border-border bg-background">
+                <table className="w-full min-w-[500px] text-sm">
+                  <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Issued sample</th><th className="px-3 py-2">Code</th><th className="px-3 py-2">Issued quantity</th><th className="px-3 py-2">Condition at issue</th></tr></thead>
+                  <tbody className="divide-y divide-border">
+                    {activeDispatch.samples.map((sample) => (
+                      <tr key={sample.itemId}><td className="px-3 py-2">{sample.name}</td><td className="px-3 py-2">{sample.code}</td><td className="px-3 py-2">{sample.issuedQuantity}</td><td className="px-3 py-2">{sample.condition || "—"}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {delivery.receiptConfirmedAt ? (
+              <section className="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <div>
+                  <h2 className="font-semibold text-emerald-900">Receipt confirmed · {delivery.receiptStatus}</h2>
+                  <p className="mt-1 text-sm text-emerald-900">
+                    {delivery.receivedQuantity} received · {outstandingQuantity} outstanding · {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(delivery.receiptConfirmedAt))}
+                  </p>
+                </div>
+                <Stage3History history={delivery.history} />
+                <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("archscale:navigate", {
+                  detail: { activeRailId: "library", activeItem: "Reviews & Approvals" },
+                }))} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">
+                  Continue to Reviews &amp; Approvals<ArrowRight className="size-4" />
+                </button>
+              </section>
+            ) : (
+              <form className="space-y-5" onSubmit={(event) => { event.preventDefault(); confirmReceipt(event.currentTarget) }}>
+                <section className="rounded-lg border border-border p-4">
+                  <h2 className="mb-4 text-base font-semibold">Delivery Information</h2>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <Stage3Field label="Pickup Location" value={delivery.pickupLocation} required onChange={(pickupLocation) => updateDelivery({ pickupLocation })} />
+                    <Stage3Select label="Delivery Method" value={delivery.deliveryMethod} options={deliveryMethods} required onChange={(deliveryMethod) => updateDelivery({ deliveryMethod, courierName: deliveryMethod === "Courier" ? delivery.courierName : "", trackingNumber: deliveryMethod === "Courier" ? delivery.trackingNumber : "" })} />
+                    <Stage3Field label="Delivery Address" value={delivery.deliveryAddress} required onChange={(deliveryAddress) => updateDelivery({ deliveryAddress })} />
+                    <Stage3Field label="Contact Person" value={delivery.contactPerson} required onChange={(contactPerson) => updateDelivery({ contactPerson })} />
+                    <Stage3Field label="Contact Number" value={delivery.contactNumber} type="tel" onChange={(contactNumber) => updateDelivery({ contactNumber })} />
+                    <Stage3Field label="Expected Delivery Date" value={delivery.expectedDeliveryDate} type="date" required onChange={(expectedDeliveryDate) => updateDelivery({ expectedDeliveryDate })} />
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-border p-4">
+                  <h2 className="mb-4 text-base font-semibold">Dispatch Information</h2>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {delivery.deliveryMethod === "Courier" && (
+                      <>
+                        <Stage3Field label="Courier Name (Optional)" value={delivery.courierName} onChange={(courierName) => updateDelivery({ courierName })} />
+                        <Stage3Field label="Tracking Number (Optional)" value={delivery.trackingNumber} onChange={(trackingNumber) => updateDelivery({ trackingNumber })} />
+                      </>
+                    )}
+                    <Stage3Field label="Dispatch Date" value={delivery.dispatchDate} type="date" onChange={(dispatchDate) => updateDelivery({ dispatchDate })} />
+                    <Stage3Select label="Dispatch Status" value={delivery.dispatchStatus} options={dispatchStatuses} required onChange={(dispatchStatus) => updateDelivery({ dispatchStatus })} />
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-border p-4">
+                  <h2 className="mb-4 text-base font-semibold">Receipt Confirmation</h2>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <Stage3Select label="Receipt Status" value={delivery.receiptStatus} options={receiptStatuses} required onChange={(receiptStatus) => updateDelivery({ receiptStatus })} />
+                    <Stage3Field label="Received Date" value={delivery.receivedDate} type="date" onChange={(receivedDate) => updateDelivery({ receivedDate })} />
+                    <Stage3Field label={`Received Quantity (Issued: ${issuedQuantity})`} value={delivery.receivedQuantity} type="number" min={0} required onChange={(value) => {
+                      const receivedQuantity = Number(value)
+                      if (Number.isInteger(receivedQuantity) && receivedQuantity >= 0 && receivedQuantity <= issuedQuantity) {
+                        updateDelivery({ receivedQuantity })
+                        setDeliveryError("")
+                      } else {
+                        setDeliveryError(`Received quantity must be between 0 and ${issuedQuantity}.`)
+                      }
+                    }} />
+                    <Stage3Select label="Received Condition" value={delivery.receivedCondition} options={receivedConditions} required onChange={(receivedCondition) => updateDelivery({ receivedCondition })} />
+                    <div className="sm:col-span-2"><Stage3Field label="Receipt Notes (Optional)" value={delivery.receiptNotes} multiline onChange={(receiptNotes) => updateDelivery({ receiptNotes })} /></div>
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">Outstanding quantity: <strong>{outstandingQuantity}</strong> of {issuedQuantity}</p>
+                </section>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">Damaged or rejected receipt statuses require notes. Fully received requires the full issued quantity and a recorded condition.</p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={(event) => saveDeliveryDraft(event.currentTarget.form!)} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Save as Draft</button>
+                    <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">Confirm Receipt</button>
+                  </div>
+                </div>
+                {deliveryError && <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{deliveryError}</p>}
+                {deliveryFeedback && <p role="status" className="text-sm text-muted-foreground">{deliveryFeedback}</p>}
+                <Stage3History history={delivery.history} />
+              </form>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
+  )
 }
 
 export function ReviewsApprovalsPage() {
