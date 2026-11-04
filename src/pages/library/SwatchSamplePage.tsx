@@ -11,7 +11,6 @@ import {
   Search,
   Send,
   ShoppingBag,
-  Trash2,
   X,
 } from "@/components/ui/icons"
 import { cn } from "@/lib/utils"
@@ -637,20 +636,63 @@ export function SelectIssuePage() {
   const activeRequest = eligibleRequests.find((request) => request.id === activeRequestId)
     ?? activeWorkflow?.request
   const query = search.trim().toLowerCase()
-  const catalogue = items.filter((item) =>
-    item.isSample &&
-    (!activeRequest?.sampleSelections?.length || activeRequest.sampleSelections.some((sample) => sample.itemId === item.id)) &&
-    (!query || `${item.name} ${item.code} ${item.category} ${item.finish} ${item.size}`.toLowerCase().includes(query))
-  )
+  const requestedSamples = activeRequest ? getStage1SampleSelections(activeRequest, items) : []
+  const catalogue = requestedSamples
+    .map((selection) => ({ selection, item: items.find((entry) => entry.id === selection.itemId) }))
+    .filter(({ selection, item }) => {
+      const searchable = item
+        ? `${item.name} ${item.code} ${item.category} ${item.finish} ${item.size}`
+        : `${selection.name} ${selection.itemId}`
+      return !query || searchable.toLowerCase().includes(query)
+    })
 
-  const reservedQuantityFor = (itemId: string) => workflows.reduce((sum, workflow) =>
-    workflow.status === "reserved" || workflow.status === "prepared"
+  const reservedQuantityFor = (itemId: string, exceptRequestId?: string) => workflows.reduce((sum, workflow) =>
+    workflow.request.id !== exceptRequestId && workflow.status !== "dispatched"
       ? sum + workflow.samples.reduce((lineSum, line) =>
-        line.itemId === itemId && line.reservedAt ? lineSum + line.reservedQuantity : lineSum, 0)
+        line.itemId === itemId && line.reservedAt ? lineSum + Math.max(0, line.reservedQuantity - line.issuedQuantity) : lineSum, 0)
       : sum, 0)
 
-  const availableQuantityFor = (item: InventoryItem, stockItems = items) =>
-    Math.max(0, (stockItems.find((entry) => entry.id === item.id)?.stock ?? 0) - reservedQuantityFor(item.id))
+  const availableQuantityFor = (item: InventoryItem, stockItems = items, exceptRequestId?: string) =>
+    Math.max(0, (stockItems.find((entry) => entry.id === item.id)?.stock ?? 0) - reservedQuantityFor(item.id, exceptRequestId))
+
+  React.useEffect(() => {
+    const updated = allocateStage2Reservations(requests, workflows, items)
+    if (JSON.stringify(updated) === JSON.stringify(workflows)) return
+    try {
+      window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(updated))
+    } catch {
+      setError("Stage 2 reservations could not be saved in this browser.")
+      return
+    }
+    setWorkflows(updated)
+  }, [requests, workflows, items, setWorkflows])
+
+  React.useEffect(() => {
+    const refreshInventory = (event?: Event) => {
+      const suppliedItems = event instanceof CustomEvent
+        ? (event.detail as { items?: InventoryItem[] } | undefined)?.items
+        : undefined
+      if (suppliedItems) {
+        setItems(suppliedItems)
+        return
+      }
+      try {
+        const saved = window.localStorage.getItem(inventoryStorageKey)
+        if (saved !== null) setItems(JSON.parse(saved) as InventoryItem[])
+      } catch {
+        setError("Updated inventory could not be read; current reservations remain unchanged.")
+      }
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === inventoryStorageKey && event.newValue) refreshInventory()
+    }
+    window.addEventListener("archscale:inventory-updated", refreshInventory)
+    window.addEventListener("storage", onStorage)
+    return () => {
+      window.removeEventListener("archscale:inventory-updated", refreshInventory)
+      window.removeEventListener("storage", onStorage)
+    }
+  }, [setItems])
 
   const persistWorkflows = (next: Stage2Workflow[], message: string) => {
     try {
@@ -666,6 +708,17 @@ export function SelectIssuePage() {
   }
 
   const openRequest = (request: MaterialRequest) => {
+    const allocated = allocateStage2Reservations(requests, workflows, items)
+    const nextWorkflow = allocated.find((workflow) => workflow.request.id === request.id)
+    if (nextWorkflow && JSON.stringify(allocated) !== JSON.stringify(workflows)) {
+      try {
+        window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(allocated))
+        setWorkflows(allocated)
+      } catch {
+        setError("Requested samples could not be loaded because browser storage is unavailable.")
+        return
+      }
+    }
     setActiveRequestId(request.id)
     setSection("Catalogue")
     setSearch("")
@@ -674,116 +727,83 @@ export function SelectIssuePage() {
   }
 
   const updateLine = (itemId: string, update: Partial<Stage2SampleLine>) => {
-    if (!activeWorkflow || activeWorkflow.status !== "selection") return
-    if (update.selectedQuantity !== undefined) {
-      const requestedSample = activeWorkflow.request.sampleSelections?.find((sample) => sample.itemId === itemId)
-      const requestedQuantity = requestedSample?.quantity ?? activeWorkflow.request.quantity
-      if (update.selectedQuantity > requestedQuantity) {
-        setError(`Selected quantity for ${requestedSample?.name ?? itemId} cannot exceed the ${requestedQuantity} requested.`)
-        return
-      }
+    if (!activeWorkflow || activeWorkflow.status === "prepared" || activeWorkflow.status === "dispatched") return
+    const updatedWorkflow = {
+      ...activeWorkflow,
+      samples: activeWorkflow.samples.map((line) => {
+        if (line.itemId !== itemId) return line
+        if (update.requestedQuantity !== undefined &&
+          (!Number.isInteger(update.requestedQuantity) || update.requestedQuantity < 1 || update.requestedQuantity > line.stage1RequestedQuantity)) {
+          setError(`Quantity for ${line.name} must be between 1 and the ${line.stage1RequestedQuantity} units requested in Stage 1.`)
+          return line
+        }
+        return {
+          ...line,
+          ...update,
+          ...(update.requestedQuantity !== undefined ? { selectedQuantity: update.requestedQuantity } : {}),
+        }
+      }),
     }
-    const next = workflows.map((workflow) => workflow.request.id === activeWorkflow.request.id
-      ? { ...workflow, samples: workflow.samples.map((line) => line.itemId === itemId ? { ...line, ...update } : line) }
-      : workflow)
+    const next = allocateStage2Reservations(
+      requests,
+      workflows.map((workflow) => workflow.request.id === activeRequestId ? updatedWorkflow : workflow),
+      items
+    )
     persistWorkflows(next, "")
   }
 
-  const addSample = (item: InventoryItem) => {
-    if (!activeRequest || (activeWorkflow && activeWorkflow.status !== "selection")) return
-    const workflow = activeWorkflow ?? {
-      request: activeRequest,
-      samples: [],
-      status: "selection" as const,
-      createdAt: currentTimestamp(),
-    }
-    const existing = workflow.samples.find((line) => line.itemId === item.id)
-    if (existing) {
-      setError("This sample is already in the Sample Bag. Update its quantity there.")
-      return
-    }
-    if (activeRequest.sampleSelections?.length && !activeRequest.sampleSelections.some((sample) => sample.itemId === item.id)) {
-      setError("This sample was not included in the Stage 1 request.")
-      return
-    }
-    if (workflow.samples.reduce((sum, line) => sum + line.selectedQuantity, 0) + 1 > activeRequest.quantity) {
-      setError(`The Sample Bag cannot exceed the request quantity of ${activeRequest.quantity}.`)
-      return
-    }
-    const line: Stage2SampleLine = {
-      itemId: item.id,
-      code: item.code,
-      name: item.name,
-      category: item.category,
-      finish: item.finish,
-      size: item.size,
-      selectedQuantity: 1,
-      stockLocation: getInventoryLocation(item),
-      reservedQuantity: 0,
-      issuedQuantity: 0,
-      condition: "",
-      issueStatus: "",
-    }
-    const nextWorkflow = { ...workflow, samples: [...workflow.samples, line] }
-    const next = activeWorkflow
-      ? workflows.map((entry) => entry.request.id === activeRequest.id ? nextWorkflow : entry)
-      : [nextWorkflow, ...workflows]
-    if (persistWorkflows(next, `${item.name} added to the Sample Bag.`)) setSection("Sample Bag")
-  }
-
   const reserveSamples = () => {
-    if (!activeWorkflow || activeWorkflow.status !== "selection" || activeWorkflow.samples.length === 0) return
     let currentItems = items
+    let currentWorkflows = workflows
+    let currentRequests = requests
     try {
       const savedItems = window.localStorage.getItem(inventoryStorageKey)
       if (savedItems !== null) currentItems = JSON.parse(savedItems) as InventoryItem[]
+      const savedWorkflows = window.localStorage.getItem(stage2WorkflowsStorageKey)
+      if (savedWorkflows !== null) currentWorkflows = JSON.parse(savedWorkflows) as Stage2Workflow[]
+      const savedRequests = window.localStorage.getItem(requestsStorageKey)
+      if (savedRequests !== null) currentRequests = JSON.parse(savedRequests) as MaterialRequest[]
     } catch {
-      setError("Current inventory could not be read; stock was not reserved.")
+      setError("Current requests, inventory, or reservations could not be read; stock was not allocated.")
       return
     }
-    const totalSelected = activeWorkflow.samples.reduce((sum, line) => sum + line.selectedQuantity, 0)
-    if (totalSelected > activeWorkflow.request.quantity) {
-      setError(`Selected quantity cannot exceed the request quantity of ${activeWorkflow.request.quantity}.`)
-      return
-    }
-    const insufficient = activeWorkflow.samples.find((line) => {
-      const item = currentItems.find((entry) => entry.id === line.itemId)
-      const requestedSample = activeWorkflow.request.sampleSelections?.find((sample) => sample.itemId === line.itemId)
-      return !item ||
-        line.selectedQuantity < 1 ||
-        line.selectedQuantity > (requestedSample?.quantity ?? activeWorkflow.request.quantity) ||
-        line.selectedQuantity > availableQuantityFor(item, currentItems)
-    })
-    if (insufficient) {
-      setError(`${insufficient.name} does not have enough available stock. Update the Sample Bag quantities and try again.`)
+    const next = allocateStage2Reservations(currentRequests, currentWorkflows, currentItems)
+    try {
+      window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(next))
+    } catch {
+      setError("Stock allocation could not be saved in this browser.")
       return
     }
     setItems(currentItems)
-    const reservedAt = currentTimestamp()
-    const nextWorkflow: Stage2Workflow = {
-      ...activeWorkflow,
-      status: "reserved",
-      reservedAt,
-      samples: activeWorkflow.samples.map((line) => ({
-        ...line,
-        reservedQuantity: line.selectedQuantity,
-        reservedAt,
-        issuedQuantity: 0,
-      })),
+    setWorkflows(next)
+    const active = next.find((workflow) => workflow.request.id === activeRequestId)
+    if (active?.status === "reserved" || active?.status === "prepared") {
+      setSection("Sample Issue")
+      setFeedback("All requested quantities are reserved and ready for preparation.")
+    } else {
+      setSection("Sample Bag")
+      setFeedback("Available stock was reserved. Any remaining quantity is pending until stock is added.")
     }
-    const next = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
-    if (persistWorkflows(next, "Stock checked and selected quantities reserved.")) setSection("Sample Issue")
+    setError("")
   }
 
   const markPrepared = () => {
-    if (!activeWorkflow || activeWorkflow.status !== "reserved") return
+    if (!activeWorkflow || activeWorkflow.status !== "reserved" ||
+      activeWorkflow.samples.some((line) => line.reservedQuantity < line.requestedQuantity)) {
+      setError("Samples cannot be prepared until every requested quantity is fully reserved.")
+      return
+    }
     const nextWorkflow = { ...activeWorkflow, status: "prepared" as const, preparedAt: currentTimestamp() }
     const next = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
     persistWorkflows(next, "Reserved samples marked as prepared.")
   }
 
   const createDispatch = (form: HTMLFormElement) => {
-    if (!activeWorkflow || activeWorkflow.status !== "prepared") return
+    if (!activeWorkflow || activeWorkflow.status !== "prepared" ||
+      activeWorkflow.samples.some((line) => line.reservedQuantity < line.requestedQuantity)) {
+      setError("Prepare samples only after every requested quantity is fully reserved.")
+      return
+    }
     const formData = new FormData(form)
     const expectedReturnDate = String(formData.get("expectedReturnDate") ?? "").trim()
     if (!expectedReturnDate) {
@@ -796,10 +816,31 @@ export function SelectIssuePage() {
       condition: String(formData.get(`condition-${line.itemId}`) ?? ""),
       issueStatus: String(formData.get(`issueStatus-${line.itemId}`) ?? ""),
     }))
+    let currentItems = items
+    let currentWorkflows = workflows
+    try {
+      const savedItems = window.localStorage.getItem(inventoryStorageKey)
+      if (savedItems !== null) currentItems = JSON.parse(savedItems) as InventoryItem[]
+      const savedWorkflows = window.localStorage.getItem(stage2WorkflowsStorageKey)
+      if (savedWorkflows !== null) currentWorkflows = JSON.parse(savedWorkflows) as Stage2Workflow[]
+    } catch {
+      setError("Current inventory or reservations could not be read; no issue was recorded.")
+      return
+    }
     const invalidLine = samples.find((line) =>
       !Number.isInteger(line.issuedQuantity) ||
       line.issuedQuantity < 0 ||
       line.issuedQuantity > line.reservedQuantity ||
+      line.issuedQuantity > line.requestedQuantity ||
+      line.issuedQuantity > (currentItems.find((item) => item.id === line.itemId)?.stock ?? -1) ||
+      line.issuedQuantity > Math.max(0,
+        (currentItems.find((item) => item.id === line.itemId)?.stock ?? 0) -
+        currentWorkflows.reduce((sum, workflow) =>
+          workflow.request.id !== activeWorkflow.request.id && workflow.status !== "dispatched"
+            ? sum + workflow.samples.filter((entry) => entry.itemId === line.itemId)
+              .reduce((lineSum, entry) => lineSum + Math.max(0, entry.reservedQuantity - entry.issuedQuantity), 0)
+            : sum, 0)
+      ) ||
       (line.issuedQuantity > 0 && (!line.condition || !line.issueStatus))
     )
     if (invalidLine) {
@@ -832,13 +873,14 @@ export function SelectIssuePage() {
       dispatchId: dispatch.id,
       status: "dispatched",
     }
-    const nextWorkflows = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
+    const workflowsWithIssue = currentWorkflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
     const nextDispatches = [dispatch, ...dispatches]
     const issuedByItem = new Map(samples.map((line) => [line.itemId, line.issuedQuantity]))
-    const currentItems = items.map((item) => ({
+    const nextItems = currentItems.map((item) => ({
       ...item,
       stock: Math.max(0, item.stock - (issuedByItem.get(item.id) ?? 0)),
     }))
+    const nextWorkflows = allocateStage2Reservations(requests, workflowsWithIssue, nextItems)
     const issuedReportEntry = {
       id: activeWorkflow.request.id,
       organization: "",
@@ -869,7 +911,7 @@ export function SelectIssuePage() {
       window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(nextWorkflows))
       window.localStorage.setItem(stage2DispatchesStorageKey, JSON.stringify(nextDispatches))
       window.localStorage.setItem(issuedRequestsStorageKey, JSON.stringify(nextReports))
-      window.localStorage.setItem(inventoryStorageKey, JSON.stringify(currentItems))
+      window.localStorage.setItem(inventoryStorageKey, JSON.stringify(nextItems))
     } catch {
       try {
         previousValues.forEach(([key, value]) => {
@@ -885,7 +927,8 @@ export function SelectIssuePage() {
     }
     setWorkflows(nextWorkflows)
     setDispatches(nextDispatches)
-    setItems(currentItems)
+    setItems(nextItems)
+    window.dispatchEvent(new CustomEvent("archscale:inventory-updated", { detail: { items: nextItems } }))
     setError("")
     setFeedback(`${dispatch.id} is ready for the dispatch team or pickup arrangement.`)
     window.dispatchEvent(new CustomEvent("archscale:navigate", {
@@ -893,7 +936,7 @@ export function SelectIssuePage() {
     }))
   }
 
-  const totalBagQuantity = activeWorkflow?.samples.reduce((sum, line) => sum + line.selectedQuantity, 0) ?? 0
+  const totalBagQuantity = activeWorkflow?.samples.reduce((sum, line) => sum + line.requestedQuantity, 0) ?? 0
   const stepButton = (name: typeof section, icon: React.ReactNode, count?: number) => (
     <button type="button" onClick={() => { setSection(name); setError("") }} className={cn(
       "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium",
@@ -957,38 +1000,61 @@ export function SelectIssuePage() {
             {section === "Catalogue" && (
               <section className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div><h2 className="font-semibold">Sample Catalogue</h2><p className="text-sm text-muted-foreground">{activeRequest.sampleSelections?.length ? "Choose only the samples requested in Stage 1 and select their requested quantities." : `Select up to ${activeRequest.quantity} total sample units for this request.`}</p></div>
+                  <div><h2 className="font-semibold">Sample Catalogue</h2><p className="text-sm text-muted-foreground">Stage 1 samples are loaded by sample ID. Stock reservations are calculated independently for each requested sample.</p></div>
                   <label className="relative block w-full max-w-sm">
                     <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <input aria-label="Search sample catalogue" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, code, category..." className={cn(inputClass, "pl-9")} />
                   </label>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {catalogue.map((item) => {
-                    const available = availableQuantityFor(item)
-                    const alreadySelected = activeWorkflow?.samples.some((line) => line.itemId === item.id) ?? false
+                  {catalogue.map(({ selection, item }) => {
+                    const line = activeWorkflow?.samples.find((sample) => sample.itemId === selection.itemId)
+                    const available = item ? availableQuantityFor(item, items, activeRequest.id) : 0
+                    const requested = line?.requestedQuantity ?? selection.quantity
+                    const reserved = line?.reservedQuantity ?? 0
+                    const pending = Math.max(0, requested - reserved)
+                    const alreadySelected = Boolean(line)
+                    const status = !item
+                      ? "Pending Stock"
+                      : activeWorkflow?.status === "dispatched" && line?.issuedQuantity
+                        ? "Issued"
+                        : reserved >= requested
+                          ? activeWorkflow?.status === "prepared" ? "Ready to Issue" : "Fully Reserved"
+                          : reserved > 0
+                            ? "Partially Reserved"
+                            : available > 0 ? "Available" : "Pending Stock"
                     return (
-                      <article key={item.id} className="rounded-lg border border-border p-4">
+                      <article key={selection.itemId} className="rounded-lg border border-border p-4">
                         <div className="flex items-start gap-3">
-                          <span className="size-10 shrink-0 rounded-md border border-border" style={{ backgroundColor: item.color }} />
+                          <span className="size-10 shrink-0 rounded-md border border-border" style={{ backgroundColor: item?.color ?? "#e5e7eb" }} />
                           <div className="min-w-0 flex-1">
-                            <h3 className="truncate text-sm font-semibold">{item.name}</h3>
-                            <p className="text-xs text-muted-foreground">{item.code} · {item.category}</p>
-                            <p className="mt-1 text-xs">{item.finish} · {item.size}</p>
+                            <h3 className="truncate text-sm font-semibold">{item?.name ?? selection.name}</h3>
+                            <p className="text-xs text-muted-foreground">{item?.code ?? selection.itemId} · {item?.category ?? "Unavailable catalogue item"}</p>
+                            {item && <p className="mt-1 text-xs">{item.finish} · {item.size}</p>}
                           </div>
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className={cn("rounded-full px-2 py-1 text-xs font-medium", available > 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>
-                            {available > 0 ? `Available · ${available}` : "Out of stock"}
-                          </span>
-                          <button type="button" disabled={available < 1 || alreadySelected || activeWorkflow?.status !== undefined && activeWorkflow.status !== "selection"} onClick={() => addSample(item)} className="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
-                            {alreadySelected ? "In Sample Bag" : "Add sample"}
+                        <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div><dt className="text-muted-foreground">Requested Quantity</dt><dd className="font-semibold">{requested}</dd></div>
+                          <div><dt className="text-muted-foreground">Available Stock</dt><dd className="font-semibold">{available}</dd></div>
+                          <div><dt className="text-muted-foreground">Reserved Quantity</dt><dd className="font-semibold">{reserved}</dd></div>
+                          <div><dt className="text-muted-foreground">Pending Quantity</dt><dd className="font-semibold">{pending}</dd></div>
+                        </dl>
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={cn("rounded-full px-2 py-1 text-xs font-medium", status === "Fully Reserved" || status === "Ready to Issue" || status === "Issued" ? "bg-emerald-100 text-emerald-800" : status === "Partially Reserved" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700")}>{status}</span>
+                            <span className="text-xs tabular-nums text-muted-foreground">{reserved}/{requested}</span>
+                          </div>
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${requested ? Math.min(100, reserved / requested * 100) : 0}%` }} /></div>
+                        </div>
+                        <div className="mt-3 flex justify-end">
+                          <button type="button" disabled={!alreadySelected} onClick={() => setSection("Sample Bag")} className="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                            {alreadySelected ? "In Sample Bag" : "Add to Sample Bag"}
                           </button>
                         </div>
                       </article>
                     )
                   })}
-                  {catalogue.length === 0 && <p className="col-span-full rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No catalogue samples match this search.</p>}
+                  {catalogue.length === 0 && <p className="col-span-full rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{requestedSamples.length ? "No requested samples match this search." : "This request has no resolvable Stage 1 sample references. Select catalogue samples in Stage 1 before coordinator review."}</p>}
                 </div>
               </section>
             )}
@@ -996,57 +1062,54 @@ export function SelectIssuePage() {
             {section === "Sample Bag" && (
               <section className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div><h2 className="font-semibold">Sample Bag</h2><p className="text-sm text-muted-foreground">{totalBagQuantity} of {activeRequest.quantity} requested units selected.</p></div>
-                  {activeWorkflow?.status === "selection" && <button type="button" onClick={reserveSamples} disabled={!activeWorkflow.samples.length} className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-40">Check stock &amp; reserve</button>}
+                  <div><h2 className="font-semibold">Sample Bag</h2><p className="text-sm text-muted-foreground">{activeWorkflow?.samples.length ?? 0} requested samples · {totalBagQuantity} target units · {activeWorkflow?.samples.reduce((sum, line) => sum + line.reservedQuantity, 0) ?? 0} reserved</p></div>
+                  {activeWorkflow?.status !== "prepared" && activeWorkflow?.status !== "dispatched" && <button type="button" onClick={reserveSamples} disabled={!activeWorkflow?.samples.length} className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-40">Refresh stock allocation</button>}
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full min-w-[700px] text-sm">
-                    <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Availability</th><th className="px-3 py-2">Quantity</th><th className="px-3 py-2">Stock location</th><th className="px-3 py-2">Action</th></tr></thead>
+                  <table className="w-full min-w-[1050px] text-sm">
+                    <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Stage 1 requested</th><th className="px-3 py-2">Request quantity</th><th className="px-3 py-2">Available stock</th><th className="px-3 py-2">Reserved</th><th className="px-3 py-2">Remaining</th><th className="px-3 py-2">Issued</th><th className="px-3 py-2">Pending</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Stock location</th></tr></thead>
                     <tbody className="divide-y divide-border">
                       {(activeWorkflow?.samples ?? []).map((line) => {
                         const item = items.find((entry) => entry.id === line.itemId)
-                        const available = item ? availableQuantityFor(item) : 0
-                        const requestedQuantity = activeRequest.sampleSelections?.find((sample) => sample.itemId === line.itemId)?.quantity ?? activeRequest.quantity
+                        const available = item ? availableQuantityFor(item, items, activeRequest.id) : 0
+                        const pending = Math.max(0, line.requestedQuantity - line.reservedQuantity)
+                        const remaining = Math.max(0, line.requestedQuantity - line.issuedQuantity)
+                        const status = activeWorkflow?.status === "dispatched" && line.issuedQuantity > 0
+                          ? "Issued"
+                          : line.reservedQuantity >= line.requestedQuantity
+                            ? activeWorkflow?.status === "prepared" ? "Ready to Issue" : "Fully Reserved"
+                            : line.reservedQuantity > 0 ? "Partially Reserved" : available > 0 ? "Available" : "Pending Stock"
                         return (
                           <tr key={line.itemId}>
                             <td className="px-3 py-3"><span className="block font-medium">{line.name}</span><span className="text-xs text-muted-foreground">{line.code} · {line.category}</span></td>
-                            <td className="px-3 py-3"><span className={cn("rounded-full px-2 py-1 text-xs font-medium", available >= line.selectedQuantity ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>{available >= line.selectedQuantity ? `${available} available` : `Only ${available} available`}</span></td>
-                            <td className="px-3 py-3"><input aria-label={`Quantity for ${line.name}`} type="number" min={1} max={Math.min(available, requestedQuantity, activeRequest.quantity - totalBagQuantity + line.selectedQuantity)} value={line.selectedQuantity} disabled={activeWorkflow?.status !== "selection"} onChange={(event) => {
+                            <td className="px-3 py-3">{line.stage1RequestedQuantity}</td>
+                            <td className="px-3 py-3"><input aria-label={`Request quantity for ${line.name}`} type="number" min={1} max={line.stage1RequestedQuantity} value={line.requestedQuantity} disabled={activeWorkflow?.status === "prepared" || activeWorkflow?.status === "dispatched"} onChange={(event) => {
                               const quantity = Number(event.target.value)
                               if (!Number.isInteger(quantity) || quantity < 1) return
-                              const otherQuantity = totalBagQuantity - line.selectedQuantity
-                              if (otherQuantity + quantity > activeRequest.quantity) {
-                                setError(`Total Sample Bag quantity cannot exceed ${activeRequest.quantity}.`)
-                                return
-                              }
-                              if (quantity > requestedQuantity) {
-                                setError(`Selected quantity for ${line.name} cannot exceed the ${requestedQuantity} requested.`)
-                                return
-                              }
-                              if (quantity > available) {
-                                setError(`Only ${available} units of ${line.name} are available.`)
+                              if (quantity > line.stage1RequestedQuantity) {
+                                setError(`Request quantity for ${line.name} cannot exceed the Stage 1 request of ${line.stage1RequestedQuantity}.`)
                                 return
                               }
                               setError("")
-                              updateLine(line.itemId, { selectedQuantity: quantity })
+                              updateLine(line.itemId, { requestedQuantity: quantity })
                             }} className="h-8 w-20 rounded-md border border-input px-2 text-sm disabled:bg-muted" /></td>
+                            <td className="px-3 py-3">{available}</td>
+                            <td className="px-3 py-3"><div className="font-medium">{line.reservedQuantity}/{line.requestedQuantity}</div><div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.min(100, line.reservedQuantity / line.requestedQuantity * 100)}%` }} /></div></td>
+                            <td className="px-3 py-3">{remaining}</td>
+                            <td className="px-3 py-3">{line.issuedQuantity}</td>
+                            <td className="px-3 py-3">{pending}</td>
+                            <td className="px-3 py-3"><span className={cn("rounded-full px-2 py-1 text-xs font-medium", status === "Fully Reserved" || status === "Ready to Issue" || status === "Issued" ? "bg-emerald-100 text-emerald-800" : status === "Partially Reserved" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700")}>{status}</span></td>
                             <td className="px-3 py-3">
                               {getInventoryLocations(item).length ? (
-                                <select aria-label={`Stock location for ${line.name}`} disabled={activeWorkflow?.status !== "selection"} value={line.stockLocation} onChange={(event) => updateLine(line.itemId, { stockLocation: event.target.value })} className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-xs">
+                                <select aria-label={`Stock location for ${line.name}`} disabled={activeWorkflow?.status === "prepared" || activeWorkflow?.status === "dispatched"} value={line.stockLocation} onChange={(event) => updateLine(line.itemId, { stockLocation: event.target.value })} className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-xs">
                                   <option value="">Select location</option>{getInventoryLocations(item).map((location) => <option key={location}>{location}</option>)}
                                 </select>
                               ) : <span className="text-xs text-muted-foreground">No locations configured</span>}
                             </td>
-                            <td className="px-3 py-3">{activeWorkflow?.status === "selection" && <button type="button" aria-label={`Remove ${line.name}`} onClick={() => {
-                              const next = workflows.map((workflow) => workflow.request.id === activeRequestId
-                                ? { ...workflow, samples: workflow.samples.filter((entry) => entry.itemId !== line.itemId) }
-                                : workflow)
-                              persistWorkflows(next, `${line.name} removed from the Sample Bag.`)
-                            }} className="inline-flex h-8 items-center gap-1 rounded border border-input px-2 text-xs hover:bg-accent"><Trash2 className="size-3.5" />Remove</button>}</td>
                           </tr>
                         )
                       })}
-                      {!activeWorkflow?.samples.length && <tr><td colSpan={5} className="p-8 text-center text-sm text-muted-foreground">No samples selected yet. Browse the catalogue to add samples.</td></tr>}
+                      {!activeWorkflow?.samples.length && <tr><td colSpan={10} className="p-8 text-center text-sm text-muted-foreground">No samples selected in Stage 1. Update the original request before coordinator review.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -1060,30 +1123,37 @@ export function SelectIssuePage() {
                   <p className="text-sm text-muted-foreground">Available quantities are calculated from inventory stock minus active reservations.</p>
                 </div>
                 {!activeWorkflow?.samples.length ? (
-                  <EmptyStage2 message="Add samples to the Sample Bag before reserving or issuing." />
-                ) : activeWorkflow.status === "selection" ? (
-                  <div className="rounded-lg border border-border p-5">
-                    <p className="text-sm">Review the Sample Bag quantities, then check stock and reserve them before preparation.</p>
-                    <button type="button" onClick={() => setSection("Sample Bag")} className="mt-3 h-9 rounded-md border border-input px-3 text-sm hover:bg-accent">Review Sample Bag</button>
+                  <EmptyStage2 message="This request has no resolvable Stage 1 sample references. Update it in Stage 1 before issuing." />
+                ) : activeWorkflow.status === "selection" || activeWorkflow.status === "partially-reserved" ? (
+                  <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-5">
+                    <p className="text-sm font-medium text-amber-950">Samples are not ready to issue while any requested quantity is pending stock.</p>
+                    <SampleQuantitySummary lines={activeWorkflow.samples} />
+                    <p className="text-xs text-amber-900">Available units have been reserved automatically. Add inventory in Products to allocate newly available units to the oldest pending request.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setSection("Sample Bag")} className="h-9 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent">Review Sample Bag</button>
+                      <button type="button" onClick={reserveSamples} className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">Refresh stock allocation</button>
+                    </div>
                   </div>
                 ) : activeWorkflow.status === "reserved" ? (
                   <div className="space-y-3 rounded-lg border border-border p-5">
-                    <p className="text-sm">Reserved quantities are held for this request. Confirm when samples have been prepared.</p>
+                    <p className="text-sm">All requested quantities are reserved for this request. Confirm when the samples have been prepared.</p>
                     <SampleQuantitySummary lines={activeWorkflow.samples} />
                     <button type="button" onClick={markPrepared} className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">Mark samples prepared</button>
                   </div>
                 ) : activeWorkflow.status === "prepared" ? (
                   <form className="space-y-4 rounded-lg border border-border p-5" onSubmit={(event) => { event.preventDefault(); createDispatch(event.currentTarget) }}>
-                    <p className="text-sm">Enter actual issued quantities. Each quantity must be no greater than the reserved quantity.</p>
+                    <p className="text-sm">All requested quantities have been reserved. Enter actual issue quantities; each must be no greater than the corresponding reserved amount.</p>
                     <div className="overflow-x-auto rounded-md border border-border">
-                      <table className="w-full min-w-[760px] text-sm">
-                        <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Reserved</th><th className="px-3 py-2">Actual issued</th><th className="px-3 py-2">Condition</th><th className="px-3 py-2">Issue status</th></tr></thead>
+                      <table className="w-full min-w-[1000px] text-sm">
+                        <thead className="bg-muted/50 text-left text-xs text-muted-foreground"><tr><th className="px-3 py-2">Sample</th><th className="px-3 py-2">Requested</th><th className="px-3 py-2">Reserved</th><th className="px-3 py-2">Pending</th><th className="px-3 py-2">Actual issued</th><th className="px-3 py-2">Condition</th><th className="px-3 py-2">Issue status</th></tr></thead>
                         <tbody className="divide-y divide-border">
                           {activeWorkflow.samples.map((line) => (
                             <tr key={line.itemId}>
                               <td className="px-3 py-3 font-medium">{line.name}<span className="block text-xs text-muted-foreground">{line.code}</span></td>
+                              <td className="px-3 py-3">{line.requestedQuantity}</td>
                               <td className="px-3 py-3">{line.reservedQuantity}</td>
-                              <td className="px-3 py-3"><input aria-label={`Issued quantity for ${line.name}`} name={`issued-${line.itemId}`} type="number" min={0} defaultValue={line.reservedQuantity} className="h-8 w-20 rounded-md border border-input px-2" /></td>
+                              <td className="px-3 py-3">{Math.max(0, line.requestedQuantity - line.reservedQuantity)}</td>
+                              <td className="px-3 py-3"><input aria-label={`Issued quantity for ${line.name}`} name={`issued-${line.itemId}`} type="number" min={0} max={Math.min(line.reservedQuantity, line.requestedQuantity)} defaultValue={line.reservedQuantity} className="h-8 w-20 rounded-md border border-input px-2" /></td>
                               <td className="px-3 py-3"><select aria-label={`Condition for ${line.name}`} name={`condition-${line.itemId}`} defaultValue="" className="h-8 rounded-md border border-input bg-background px-2 text-xs"><option value="">Select condition</option>{sampleConditions.map((value) => <option key={value}>{value}</option>)}</select></td>
                               <td className="px-3 py-3"><select aria-label={`Issue status for ${line.name}`} name={`issueStatus-${line.itemId}`} defaultValue="" className="h-8 rounded-md border border-input bg-background px-2 text-xs"><option value="">Select status</option>{sampleIssueStatuses.map((value) => <option key={value}>{value}</option>)}</select></td>
                             </tr>
@@ -1121,6 +1191,8 @@ type Stage2SampleLine = {
   category: string
   finish: string
   size: string
+  stage1RequestedQuantity: number
+  requestedQuantity: number
   selectedQuantity: number
   stockLocation: string
   reservedQuantity: number
@@ -1133,7 +1205,7 @@ type Stage2SampleLine = {
 type Stage2Workflow = {
   request: MaterialRequest
   samples: Stage2SampleLine[]
-  status: "selection" | "reserved" | "prepared" | "dispatched"
+  status: "selection" | "partially-reserved" | "reserved" | "prepared" | "dispatched"
   createdAt: string
   reservedAt?: string
   preparedAt?: string
@@ -1334,6 +1406,103 @@ function getInventoryLocation(item: InventoryItem): string {
   return getInventoryLocations(item)[0] ?? ""
 }
 
+function getStage1SampleSelections(request: MaterialRequest, items: InventoryItem[]): SampleRequestSelection[] {
+  if (request.sampleSelections?.length) {
+    const unique = new Map<string, SampleRequestSelection>()
+    request.sampleSelections.forEach((sample) => {
+      const item = items.find((entry) => entry.id === sample.itemId)
+      if ((!item || item.isSample) && Number.isInteger(sample.quantity) && sample.quantity > 0 && sample.itemId && !unique.has(sample.itemId)) {
+        unique.set(sample.itemId, sample)
+      }
+    })
+    return [...unique.values()]
+  }
+
+  const tokens = request.sampleDetails.split(/[,\n;]+/).map((token) => token.trim().toLowerCase()).filter(Boolean)
+  const matched = tokens.map((token) => items.find((item) =>
+    item.isSample && [item.id, item.code, item.name].some((value) => value.trim().toLowerCase() === token)
+  )).filter((item): item is InventoryItem => Boolean(item))
+  const unique = [...new Map(matched.map((item) => [item.id, item])).values()]
+  return unique.length === 1
+    ? [{ itemId: unique[0].id, name: unique[0].name, quantity: request.quantity }]
+    : []
+}
+
+function createStage2Workflow(request: MaterialRequest, items: InventoryItem[], existing?: Stage2Workflow): Stage2Workflow {
+  const priorLines = new Map((existing?.samples ?? []).map((line) => [line.itemId, line]))
+  const samples = getStage1SampleSelections(request, items).map((selection): Stage2SampleLine => {
+    const item = items.find((entry) => entry.id === selection.itemId)
+    const previous = priorLines.get(selection.itemId)
+    const stage1RequestedQuantity = selection.quantity
+    const requestedQuantity = Math.min(previous?.requestedQuantity ?? stage1RequestedQuantity, stage1RequestedQuantity)
+    return {
+      ...previous,
+      itemId: selection.itemId,
+      code: item?.code ?? previous?.code ?? selection.itemId,
+      name: item?.name ?? previous?.name ?? selection.name,
+      category: item?.category ?? previous?.category ?? "Unavailable catalogue item",
+      finish: item?.finish ?? previous?.finish ?? "",
+      size: item?.size ?? previous?.size ?? "",
+      stage1RequestedQuantity,
+      requestedQuantity,
+      selectedQuantity: requestedQuantity,
+      stockLocation: previous?.stockLocation ?? (item ? getInventoryLocation(item) : ""),
+      reservedQuantity: previous?.reservedQuantity ?? 0,
+      issuedQuantity: previous?.issuedQuantity ?? 0,
+      condition: previous?.condition ?? "",
+      issueStatus: previous?.issueStatus ?? "",
+    }
+  })
+  return {
+    ...existing,
+    request,
+    samples,
+    status: existing?.status ?? "selection",
+    createdAt: existing?.createdAt ?? request.createdAt,
+  }
+}
+
+function allocateStage2Reservations(
+  requests: MaterialRequest[],
+  workflows: Stage2Workflow[],
+  items: InventoryItem[],
+): Stage2Workflow[] {
+  const byRequest = new Map(workflows.map((workflow) => [workflow.request.id, workflow]))
+  const eligible = requests
+    .filter((request) => request.status === "Ready for Select & Issue")
+    .slice()
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+  eligible.forEach((request) => {
+    byRequest.set(request.id, createStage2Workflow(request, items, byRequest.get(request.id)))
+  })
+
+  const remainingStock = new Map(items.map((item) => [item.id, Math.max(0, item.stock)]))
+  eligible.forEach((request) => {
+    const workflow = byRequest.get(request.id)
+    if (!workflow || workflow.status === "dispatched") return
+    const samples = workflow.samples.map((line) => {
+      const desired = Math.min(line.stage1RequestedQuantity, line.requestedQuantity)
+      const available = remainingStock.get(line.itemId) ?? 0
+      const reservedQuantity = Math.min(desired, available)
+      remainingStock.set(line.itemId, Math.max(0, available - reservedQuantity))
+      return {
+        ...line,
+        requestedQuantity: desired,
+        selectedQuantity: desired,
+        reservedQuantity,
+        reservedAt: reservedQuantity > 0 ? line.reservedAt ?? currentTimestamp() : undefined,
+      }
+    })
+    const fullyReserved = samples.length > 0 && samples.every((line) => line.reservedQuantity >= line.requestedQuantity)
+    const partiallyReserved = samples.some((line) => line.reservedQuantity > 0)
+    const status = fullyReserved
+      ? workflow.status === "prepared" ? "prepared" as const : "reserved" as const
+      : partiallyReserved ? "partially-reserved" as const : "selection" as const
+    byRequest.set(request.id, { ...workflow, samples, status })
+  })
+  return [...byRequest.values()]
+}
+
 function EmptyStage2({ message }: { message: string }) {
   return <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">{message}</div>
 }
@@ -1341,7 +1510,22 @@ function EmptyStage2({ message }: { message: string }) {
 function SampleQuantitySummary({ lines }: { lines: Stage2SampleLine[] }) {
   return (
     <ul className="divide-y divide-border rounded-md border border-border">
-      {lines.map((line) => <li key={line.itemId} className="flex justify-between gap-3 px-3 py-2 text-sm"><span>{line.name}</span><span>{line.reservedQuantity} reserved</span></li>)}
+      {lines.map((line) => {
+        const pending = Math.max(0, line.requestedQuantity - line.reservedQuantity)
+        const remaining = Math.max(0, line.requestedQuantity - line.issuedQuantity)
+        const status = line.issuedQuantity > 0
+          ? "Issued"
+          : line.reservedQuantity >= line.requestedQuantity
+            ? "Ready to Issue"
+            : line.reservedQuantity > 0 ? "Partially Reserved" : "Pending Stock"
+        return (
+          <li key={line.itemId} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
+            <span className="min-w-0 flex-1">{line.name}<span className="ml-2 text-xs text-muted-foreground">{line.code}</span></span>
+            <span className="text-xs text-muted-foreground">Requested {line.requestedQuantity} · Reserved {line.reservedQuantity} · Pending {pending} · Issued {line.issuedQuantity} · Remaining {remaining}</span>
+            <span className={cn("rounded-full px-2 py-1 text-xs font-medium", status === "Ready to Issue" || status === "Issued" ? "bg-emerald-100 text-emerald-800" : status === "Partially Reserved" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700")}>{status}</span>
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -2359,6 +2543,7 @@ export function ReturnsClosurePage() {
     if (goodStockDelta > 0) {
       setItems(nextItems)
       setAdjustments(nextAdjustments)
+      window.dispatchEvent(new CustomEvent("archscale:inventory-updated", { detail: { items: nextItems } }))
     }
     setError("")
     setMessage(goodStockDelta > 0

@@ -52,9 +52,11 @@ export function ItemListPage() {
       setItemError(`Item code ${code} already exists.`)
       return
     }
-    setItems((current) => editingItem
-      ? current.map((existing) => existing.id === editingItem.id ? { ...item, id, code } : existing)
-      : [{ ...item, id, code }, ...current])
+    const nextItems = editingItem
+      ? items.map((existing) => existing.id === editingItem.id ? { ...item, id, code } : existing)
+      : [{ ...item, id, code }, ...items]
+    setItems(nextItems)
+    window.dispatchEvent(new CustomEvent("archscale:inventory-updated", { detail: { items: nextItems } }))
     setActiveCategory("All")
     setSearch("")
     setIsCreating(false)

@@ -39,7 +39,9 @@ export function StocksPage() {
     const item = items.find((entry) => entry.id === itemId)
     if (!item) return
     const nextQuantity = Math.max(0, Math.floor(quantity))
-    setItems((current) => current.map((entry) => entry.id === itemId ? { ...entry, stock: nextQuantity } : entry))
+    const nextItems = items.map((entry) => entry.id === itemId ? { ...entry, stock: nextQuantity } : entry)
+    setItems(nextItems)
+    window.dispatchEvent(new CustomEvent("archscale:inventory-updated", { detail: { items: nextItems } }))
     setAdjustments((current) => [{
       id: `ADJ-${Date.now()}`,
       itemId,
