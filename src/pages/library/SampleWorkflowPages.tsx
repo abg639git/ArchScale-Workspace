@@ -58,24 +58,37 @@ import {
 import {
   commitWithInventory,
   commitWorkflow,
-  resetWorkflow,
   useAllocation,
   useInventory,
   useWorkflow,
 } from "./sample-workflow/store"
 import { mergedClosureRecord } from "./sample-workflow/operations"
+import {
+  CheckCircle2,
+  ClipboardList,
+  MessageCircle,
+  Package,
+  Truck,
+} from "@/components/ui/icons"
 
 const today = () => new Date().toISOString().slice(0, 10)
 
 const inputClass =
-  "h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100"
+  "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
 const textAreaClass =
-  "min-h-24 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100"
-const cardClass = "rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+  "min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500"
+const cardClass = "rounded-xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/70 p-4 shadow-[0_2px_10px_rgba(15,23,42,0.045)] ring-1 ring-slate-900/[0.02] sm:p-5"
 const buttonClass =
-  "inline-flex min-h-10 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+  "inline-flex min-h-9 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 const secondaryButtonClass =
-  "inline-flex min-h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+  "inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+const stageThemes = [
+  { active: "border-indigo-600 bg-indigo-600 shadow-indigo-200/60", icon: "text-indigo-500", eyebrow: "text-indigo-700", activeIcon: "text-indigo-100", step: "text-indigo-200" },
+  { active: "border-violet-600 bg-violet-600 shadow-violet-200/60", icon: "text-violet-500", eyebrow: "text-violet-700", activeIcon: "text-violet-100", step: "text-violet-200" },
+  { active: "border-sky-600 bg-sky-600 shadow-sky-200/60", icon: "text-sky-500", eyebrow: "text-sky-700", activeIcon: "text-sky-100", step: "text-sky-200" },
+  { active: "border-amber-600 bg-amber-600 shadow-amber-200/60", icon: "text-amber-600", eyebrow: "text-amber-700", activeIcon: "text-amber-100", step: "text-amber-200" },
+  { active: "border-emerald-600 bg-emerald-600 shadow-emerald-200/60", icon: "text-emerald-600", eyebrow: "text-emerald-700", activeIcon: "text-emerald-100", step: "text-emerald-200" },
+]
 
 function Field({
   label,
@@ -87,7 +100,7 @@ function Field({
   required?: boolean
 }) {
   return (
-    <label className="block space-y-1.5 text-sm font-medium text-slate-700">
+    <label className="block space-y-1 text-xs font-semibold text-slate-700">
       <span>{label}{required && <span className="ml-1 text-rose-600">*</span>}</span>
       {children}
     </label>
@@ -106,7 +119,7 @@ function StatusBadge({ children }: { children: React.ReactNode }) {
           : status === "Rejected" || status === "Damaged" || status === "Pending Stock"
             ? "bg-rose-50 text-rose-700"
             : "bg-slate-100 text-slate-700"
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${color}`}>{children}</span>
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${color}`}>{children}</span>
 }
 
 function StageLayout({
@@ -120,28 +133,29 @@ function StageLayout({
   subtitle: string
   children: React.ReactNode
 }) {
-  const [resetMessage, setResetMessage] = React.useState("")
-  const onReset = () => {
-    if (!window.confirm("Reset Sample Management to the demo workflow? Current local workflow data will be replaced.")) return
-    const error = resetWorkflow("demo")
-    setResetMessage(error ?? "Demo workflow restored.")
-  }
+  const steps = [
+    { label: "Request", Icon: ClipboardList },
+    { label: "Reserve & Issue", Icon: Package },
+    { label: "Delivery", Icon: Truck },
+    { label: "Review", Icon: MessageCircle },
+    { label: "Closure", Icon: CheckCircle2 },
+  ]
+  const theme = stageThemes[stage - 1]
   return (
-    <main className="min-h-full bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
+    <main className="h-full min-h-0 w-full flex-1 overflow-y-auto overscroll-contain bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <header className="flex flex-col gap-3 border-b border-slate-200/80 pb-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Sample Management · Stage {stage} of 5</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{title}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-slate-600">{subtitle}</p>
+            <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${theme.eyebrow}`}>Sample Management <span className="px-1 text-slate-300">/</span> Stage {stage} of 5</p>
+            <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
+            <p className="mt-1 max-w-3xl text-[13px] leading-5 text-slate-500">{subtitle}</p>
           </div>
-          <button type="button" className={secondaryButtonClass} onClick={onReset}>Reset demo data</button>
         </header>
-        {resetMessage && <p role="status" className="text-sm text-slate-600">{resetMessage}</p>}
         <nav aria-label="Sample workflow stages" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {["Request", "Reserve & Issue", "Delivery", "Review", "Closure"].map((label, index) => (
-            <div key={label} className={`rounded-lg px-3 py-2 text-center text-xs font-semibold ${index + 1 === stage ? "bg-indigo-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200"}`}>
-              {String(index + 1).padStart(2, "0")} · {label}
+          {steps.map(({ label, Icon }, index) => (
+            <div key={label} aria-current={index + 1 === stage ? "step" : undefined} className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-2.5 py-2 text-center text-xs font-semibold transition-colors ${index + 1 === stage ? `${theme.active} text-white shadow-md` : "border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white"}`}>
+              <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${index + 1 === stage ? theme.activeIcon : stageThemes[index].icon}`} />
+              <span><span className={`mr-1.5 text-[10px] ${index + 1 === stage ? theme.step : "text-slate-400"}`}>{String(index + 1).padStart(2, "0")}</span>{label}</span>
             </div>
           ))}
         </nav>
@@ -154,8 +168,8 @@ function StageLayout({
 function Feedback({ error, success }: { error: string; success: string }) {
   return (
     <>
-      {error && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      {success && <p role="status" className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>}
+      {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+      {success && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>}
     </>
   )
 }
@@ -217,14 +231,20 @@ export function SwatchSamplePage() {
     assignment: "Sample Coordinator" as Assignment,
   })
   const [quantities, setQuantities] = React.useState<Record<string, number>>({})
-  const [sampleSearch, setSampleSearch] = React.useState("")
+  const [pendingItemId, setPendingItemId] = React.useState("")
+  const [pendingQuantity, setPendingQuantity] = React.useState(1)
   const [error, setError] = React.useState("")
   const [success, setSuccess] = React.useState("")
   const requests = document.requests.slice().reverse()
   const [selected] = useSelectedRequest(requests)
-  const filteredSamples = sampleItems.filter((item) =>
-    `${item.name} ${item.code} ${item.category}`.toLowerCase().includes(sampleSearch.toLowerCase())
-  )
+  const selectedSamples = sampleItems.filter((item) => (quantities[item.id] ?? 0) > 0)
+
+  const addSample = () => {
+    const item = sampleItems.find((entry) => entry.id === pendingItemId)
+    if (!item) return
+    setQuantities((current) => ({ ...current, [item.id]: Math.max(1, pendingQuantity) }))
+    setPendingItemId("")
+  }
 
   const setField = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((current) => ({ ...current, [key]: value }))
@@ -267,7 +287,7 @@ export function SwatchSamplePage() {
       <Feedback error={error} success={success} />
       <section className={cardClass}>
         <h2 className="text-lg font-semibold text-slate-900">New sample request</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Request source" required><select className={inputClass} value={form.source} onChange={(e) => setField("source", e.target.value as RequestSource)}>{REQUEST_SOURCES.map((value) => <option key={value}>{value}</option>)}</select></Field>
           <Field label="Request type"><select className={inputClass} value={form.requestType} onChange={(e) => setField("requestType", e.target.value)}>{REQUEST_TYPES.map((value) => <option key={value}>{value}</option>)}</select></Field>
           <Field label="Project / client" required><input className={inputClass} value={form.project} onChange={(e) => setField("project", e.target.value)} /></Field>
@@ -284,21 +304,68 @@ export function SwatchSamplePage() {
         <Field label="Purpose" required><textarea className={`${textAreaClass} mt-1.5`} value={form.purpose} onChange={(e) => setField("purpose", e.target.value)} /></Field>
         <div className="mt-5">
           <h3 className="text-sm font-semibold text-slate-800">Sample selection <span className="text-rose-600">*</span></h3>
-          <p className="mb-3 mt-1 text-xs text-slate-500">Choose catalogue items and set each requested quantity independently.</p>
-          <input className={`${inputClass} mb-3`} type="search" aria-label="Search sample catalogue" placeholder="Search catalogue by name, code, or category" value={sampleSearch} onChange={(e) => setSampleSearch(e.target.value)} />
-          {sampleItems.some((item) => (quantities[item.id] ?? 0) > 0) && <div className="mb-3 flex flex-wrap gap-2">{sampleItems.filter((item) => (quantities[item.id] ?? 0) > 0).map((item) => <button key={item.id} type="button" className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700" onClick={() => setQuantities((current) => ({ ...current, [item.id]: 0 }))}>{item.name} · {quantities[item.id]} × <span aria-label={`Remove ${item.name}`}>×</span></button>)}</div>}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {filteredSamples.map((item) => {
-              const quantity = quantities[item.id] ?? 0
-              return (
-                <div key={item.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
-                  <input aria-label={`Select ${item.name}`} type="checkbox" checked={quantity > 0} onChange={(e) => setQuantities((current) => ({ ...current, [item.id]: e.target.checked ? 1 : 0 }))} />
-                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.name}</p><p className="text-xs text-slate-500">{item.code} · {item.category} · Stock {item.stock}</p></div>
-                  <input aria-label={`${item.name} requested quantity`} type="number" min={1} step={1} disabled={quantity === 0} className={`${inputClass} w-24`} value={quantity || ""} onChange={(e) => setQuantities((current) => ({ ...current, [item.id]: Math.max(0, Number(e.target.value) || 0) }))} />
-                </div>
-              )
-            })}
+          <p className="mb-3 mt-1 text-xs text-slate-500">Pick a catalogue item from the dropdown and set its requested quantity.</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[16rem] flex-1 space-y-1 text-xs font-semibold text-slate-700">
+              <span>Catalogue sample</span>
+              <select
+                className={inputClass}
+                aria-label="Catalogue sample"
+                value={pendingItemId}
+                onChange={(e) => setPendingItemId(e.target.value)}
+              >
+                <option value="">Select a sample…</option>
+                {sampleItems.map((item) => (
+                  <option key={item.id} value={item.id} disabled={(quantities[item.id] ?? 0) > 0}>
+                    {item.name} · {item.code} · {item.category} (Stock {item.stock})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="w-28 space-y-1 text-xs font-semibold text-slate-700">
+              <span>Quantity</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                aria-label="Requested quantity"
+                className={inputClass}
+                value={pendingQuantity}
+                onChange={(e) => setPendingQuantity(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
+            <button type="button" className={secondaryButtonClass} disabled={!pendingItemId} onClick={addSample}>
+              Add sample
+            </button>
           </div>
+          {selectedSamples.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {selectedSamples.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 py-1 pl-3 pr-1.5 text-xs font-semibold text-indigo-800">
+                  <span className="max-w-[14rem] truncate">{item.name} <span className="font-normal text-indigo-500">· {item.code}</span></span>
+                  <input
+                    aria-label={`${item.name} requested quantity`}
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="h-6 w-14 rounded-full border border-indigo-200 bg-white px-1.5 text-center text-xs font-semibold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    value={quantities[item.id]}
+                    onChange={(e) => setQuantities((current) => ({ ...current, [item.id]: Math.max(1, Number(e.target.value) || 1) }))}
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.name}`}
+                    className="flex size-5 items-center justify-center rounded-full text-indigo-400 transition hover:bg-indigo-100 hover:text-indigo-700"
+                    onClick={() => setQuantities((current) => ({ ...current, [item.id]: 0 }))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">No samples selected yet.</p>
+          )}
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           <button type="button" className={secondaryButtonClass} onClick={() => save(false)}>Save draft</button>
@@ -307,7 +374,7 @@ export function SwatchSamplePage() {
       </section>
       <section className={cardClass}>
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-900">Sample requests</h2><span className="text-sm text-slate-500">{requests.length} total</span></div>
-        {requests.length ? <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-500"><th className="pb-2">Request</th><th className="pb-2">Project</th><th className="pb-2">Requester</th><th className="pb-2">Samples</th><th className="pb-2">Status</th><th className="pb-2">Action</th></tr></thead><tbody>{requests.map((request) => <tr key={request.id} className="border-b last:border-0"><td className="py-3 font-semibold">{request.id}</td><td className="py-3">{request.project}</td><td className="py-3">{request.requester}</td><td className="py-3">{request.sampleDetails}</td><td className="py-3"><StatusBadge>{request.status}</StatusBadge></td><td className="py-3">{request.status === "Draft" && <button className="text-sm font-semibold text-indigo-700" onClick={() => submitExisting(request.id)}>Submit</button>}</td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-500">No sample requests yet.</p>}
+        {requests.length ? <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-slate-50"><tr className="border-b text-[10px] font-semibold uppercase tracking-wider text-slate-500"><th className="px-3 py-2.5">Request</th><th className="px-3 py-2.5">Project</th><th className="px-3 py-2.5">Requester</th><th className="px-3 py-2.5">Samples</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5">Action</th></tr></thead><tbody>{requests.map((request) => <tr key={request.id} className="border-b text-slate-700 transition-colors last:border-0 hover:bg-slate-50/70"><td className="px-3 py-3 font-semibold text-slate-900">{request.id}</td><td className="px-3 py-3">{request.project}</td><td className="px-3 py-3">{request.requester}</td><td className="px-3 py-3">{request.sampleDetails}</td><td className="px-3 py-3"><StatusBadge>{request.status}</StatusBadge></td><td className="px-3 py-3">{request.status === "Draft" && <button className="text-sm font-semibold text-indigo-700 hover:text-indigo-900" onClick={() => submitExisting(request.id)}>Submit</button>}</td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-500">No sample requests yet.</p>}
       </section>
       {selected && <p className="sr-only">Selected request {selected.id}</p>}
     </StageLayout>
@@ -341,7 +408,7 @@ export function SelectIssuePage() {
     if (!request) return
     setError(""); setSuccess("")
     const entries = lines.filter((line) => (bagQuantities[line.itemId] ?? 0) > 0).map((line) => ({ itemId: line.itemId, quantity: bagQuantities[line.itemId] }))
-    const result = addBag(document, { requestId: request.id, name: bagName, stockLocation: "Studio", lines: entries })
+    const result = addBag(document, { requestId: request.id, name: bagName, stockLocation: "Studio", lines: entries }, inventory)
     if (result.error) return setError(result.error)
     const persistError = commitWorkflow(result.document)
     if (persistError) setError(persistError)
@@ -350,10 +417,22 @@ export function SelectIssuePage() {
   const issueBag = (bagId: string) => {
     if (!request) return
     setError(""); setSuccess("")
+    const bag = bags.find((entry) => entry.id === bagId)
+    if (!bag) return setError("Bag not found.")
+    const quantities = Object.fromEntries(bag.lines.map((line) => {
+      const reserved = allocation[request.id]?.lines[line.itemId]?.reserved ?? 0
+      const alreadyIssued = document.issues
+        .filter((issue) => issue.bagId === bag.id)
+        .flatMap((issue) => issue.lines)
+        .filter((issueLine) => issueLine.bagLineId === line.id)
+        .reduce((sum, issueLine) => sum + issueLine.quantity, 0)
+      const max = Math.min(line.quantity - alreadyIssued, reserved)
+      return [line.id, issueQuantities[bag.id]?.[line.id] ?? max]
+    }))
     const result = createIssue(document, inventory, {
       requestId: request.id,
       bagId,
-      quantities: issueQuantities[bagId] ?? {},
+      quantities,
       issuedBy,
       issuedTo,
       conditionAtIssue: condition,
@@ -381,7 +460,7 @@ export function SelectIssuePage() {
               <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Request ID</p><p className="mt-1 font-semibold">{request.id}</p></div>
             </div>
             {request.status === "Submitted" && <button className={`${buttonClass} mt-4`} onClick={() => { const result = acceptRequest(document, request.id); if (result.error) { setError(result.error) } else { const err = commitWorkflow(result.document); if (err) setError(err); else setSuccess("Request accepted for allocation.") } }}>Accept request</button>}
-            <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead><tr className="border-b text-xs uppercase text-slate-500"><th className="pb-2">Sample</th><th className="pb-2">Requested</th><th className="pb-2">Available</th><th className="pb-2">Reserved</th><th className="pb-2">Pending</th><th className="pb-2">Issued</th><th className="pb-2">Status</th></tr></thead><tbody>{lines.map((line) => { const row = allocation[request.id]?.lines[line.itemId]; const status = !row?.reserved && row?.pending ? "Pending Stock" : row?.pending ? "Partially Reserved" : row?.remaining === 0 ? "Issued" : "Fully Reserved"; return <tr key={line.itemId} className="border-b last:border-0"><td className="py-3"><p className="font-semibold">{line.name}</p><p className="text-xs text-slate-500">{line.code} · {line.itemId}</p></td><td className="py-3">{row?.requested ?? line.quantity}</td><td className="py-3">{row?.available ?? 0}</td><td className="py-3">{row?.reserved ?? 0}/{row?.requested ?? line.quantity}</td><td className="py-3">{row?.pending ?? line.quantity}</td><td className="py-3">{row?.issued ?? 0}</td><td className="py-3"><StatusBadge>{status}</StatusBadge></td></tr> })}</tbody></table></div>
+            <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-50"><tr className="border-b text-[10px] font-semibold uppercase tracking-wider text-slate-500"><th className="px-3 py-2.5">Sample</th><th className="px-3 py-2.5">Requested</th><th className="px-3 py-2.5">Available</th><th className="px-3 py-2.5">Reserved</th><th className="px-3 py-2.5">Pending</th><th className="px-3 py-2.5">Issued</th><th className="px-3 py-2.5">Status</th></tr></thead><tbody>{lines.map((line) => { const row = allocation[request.id]?.lines[line.itemId]; const status = !row?.reserved && row?.pending ? "Pending Stock" : row?.pending ? "Partially Reserved" : row?.remaining === 0 ? "Issued" : "Fully Reserved"; return <tr key={line.itemId} className="border-b text-slate-700 transition-colors last:border-0 hover:bg-slate-50/70"><td className="px-3 py-3"><p className="font-semibold text-slate-900">{line.name}</p><p className="text-xs text-slate-500">{line.code} · {line.itemId}</p></td><td className="px-3 py-3">{row?.requested ?? line.quantity}</td><td className="px-3 py-3">{row?.available ?? 0}</td><td className="px-3 py-3">{row?.reserved ?? 0}/{row?.requested ?? line.quantity}</td><td className="px-3 py-3">{row?.pending ?? line.quantity}</td><td className="px-3 py-3">{row?.issued ?? 0}</td><td className="px-3 py-3"><StatusBadge>{status}</StatusBadge></td></tr> })}</tbody></table></div>
             {request.status !== "Submitted" && request.status !== "Closed" && <>
               <div className="mt-6 border-t border-slate-100 pt-5">
                 <h3 className="font-semibold text-slate-900">Build sample bag</h3>
@@ -443,14 +522,25 @@ export function DeliveryReceiptPage() {
   const [success, setSuccess] = React.useState("")
 
   const saveDispatch = () => {
+    setError("")
+    setSuccess("")
     if (!request || !selectedIssue) return setError("Select an issued sample before creating a dispatch.")
-    setError(""); setSuccess("")
-    const result = createDispatch(document, { requestId: request.id, issueId: selectedIssue.id, ...dispatchForm })
+    const result = createDispatch(document, {
+      requestId: request.id,
+      issueId: selectedIssue.id,
+      ...dispatchForm,
+      deliveryAddress: dispatchForm.deliveryAddress || request.deliveryAddress,
+      contactPerson: dispatchForm.contactPerson || request.deliveryContact,
+      contactNumber: dispatchForm.contactNumber || request.phone,
+      dispatchedBy: dispatchForm.dispatchedBy || request.assignedCoordinator,
+    })
     if (result.error) return setError(result.error)
     const persistError = commitWorkflow(result.document)
     if (persistError) setError(persistError); else setSuccess("Dispatch created.")
   }
   const saveReceipt = () => {
+    setError("")
+    setSuccess("")
     if (!selectedDispatch) return setError("Select a dispatch.")
     const issue = document.issues.find((entry) => entry.id === selectedDispatch.issueId)
     if (!issue) return setError("The issue linked to this dispatch could not be found.")
@@ -521,11 +611,13 @@ export function ReviewsApprovalsPage() {
   const [finalApproval, setFinalApproval] = React.useState<"Approved" | "Rejected" | "Changes Required" | "Not Required">("Approved")
   const [approvedBy, setApprovedBy] = React.useState("")
   const [finalComments, setFinalComments] = React.useState("")
-  const [coordinator, setCoordinator] = React.useState(request?.assignedCoordinator ?? "")
+  const [coordinator, setCoordinator] = React.useState("")
   const [error, setError] = React.useState("")
   const [success, setSuccess] = React.useState("")
 
   const submitReview = () => {
+    setError("")
+    setSuccess("")
     if (!request || !review) return setError("Select a confirmed received sample.")
     const result = recordReviewDecision(document, { requestId: request.id, reviewId: review.id, reviewer, reviewerRole, reviewDate: today(), dueDate, nextReviewDate, decision, comments, feedback, followUp, returnInstruction })
     if (result.error) return setError(result.error)
@@ -533,6 +625,8 @@ export function ReviewsApprovalsPage() {
     if (persistError) setError(persistError); else setSuccess("Review decision and history recorded; coordinator notified.")
   }
   const beginReview = () => {
+    setError("")
+    setSuccess("")
     if (!review) return setError("Select a confirmed received sample.")
     const result = startReview(document, { reviewId: review.id, reviewer, reviewerRole, dueDate })
     if (result.error) return setError(result.error)
@@ -540,8 +634,17 @@ export function ReviewsApprovalsPage() {
     if (persistError) setError(persistError); else setSuccess("Review started and saved as a draft.")
   }
   const submitFinal = () => {
+    setError("")
+    setSuccess("")
     if (!review) return setError("Select a review record.")
-    const result = recordFinalApproval(document, { reviewId: review.id, finalApproval, decisionDate: today(), approvedBy, coordinator, finalComments })
+    const result = recordFinalApproval(document, {
+      reviewId: review.id,
+      finalApproval,
+      decisionDate: today(),
+      approvedBy,
+      coordinator: coordinator || request?.assignedCoordinator || "",
+      finalComments,
+    })
     if (result.error) return setError(result.error)
     const persistError = commitWorkflow(result.document)
     if (persistError) setError(persistError); else setSuccess("Final decision recorded.")
@@ -581,7 +684,7 @@ export function ReviewsApprovalsPage() {
             {cycle ? <div className="rounded-lg bg-slate-50 p-3 text-sm"><p>Latest cycle {cycle.cycle}: <strong>{cycle.decision || "Awaiting review"}</strong> · {cycle.finalApproval}</p><p className="mt-1 text-slate-500">{cycle.feedback || cycle.comments || "No comments recorded."}</p></div> : <p className="text-sm text-slate-500">Record a review decision before finalizing.</p>}
             <Field label="Final decision"><select className={inputClass} value={finalApproval} onChange={(e) => setFinalApproval(e.target.value as typeof finalApproval)}><option>Approved</option><option>Rejected</option><option>Changes Required</option><option>Not Required</option></select></Field>
             {finalApproval !== "Not Required" && <Field label="Decision recorded by"><input className={inputClass} value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} /></Field>}
-            <Field label="Next responsible coordinator"><input className={inputClass} value={coordinator} onChange={(e) => setCoordinator(e.target.value)} /></Field>
+            <Field label="Next responsible coordinator"><input className={inputClass} value={coordinator || request?.assignedCoordinator || ""} onChange={(e) => setCoordinator(e.target.value)} /></Field>
             <Field label="Final comments"><textarea className={textAreaClass} value={finalComments} onChange={(e) => setFinalComments(e.target.value)} /></Field>
             <button className={secondaryButtonClass} onClick={submitFinal} disabled={!cycle?.decision}>Record final decision</button>
             <div className="border-t border-slate-100 pt-3"><p className="text-sm font-semibold">Review history</p>{review.cycles.length ? <ol className="mt-2 space-y-2">{review.cycles.map((entry) => <li key={entry.cycle} className="text-sm"><StatusBadge>{entry.decision || entry.status}</StatusBadge><span className="ml-2">Cycle {entry.cycle} · {entry.reviewer} · {entry.reviewDate}</span><p className="mt-1 text-xs text-slate-500">{entry.feedback || entry.comments || "No feedback"}</p></li>)}</ol> : <p className="mt-2 text-xs text-slate-500">No decisions recorded.</p>}</div>
@@ -703,6 +806,8 @@ export function ReturnsClosurePage() {
   const blockers = request && record ? closureBlockers({ request, record, document, allocation }).blockers : []
 
   const cancelPending = () => {
+    setError("")
+    setSuccess("")
     if (!request) return
     const result = resolvePendingDemand(document, request.id)
     if (result.error) return setError(result.error)
@@ -718,6 +823,8 @@ export function ReturnsClosurePage() {
     if (persistError) setError(persistError); else setSuccess("Request closed. The request is now read-only.")
   }
   const saveDraft = () => {
+    setError("")
+    setSuccess("")
     if (!request) return
     const result = saveClosureDraft(document, request.id, { closedBy, closureDate, closureNotes })
     if (result.error) return setError(result.error)

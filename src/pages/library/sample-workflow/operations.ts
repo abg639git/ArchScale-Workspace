@@ -233,35 +233,46 @@ export type BagDraft = {
   lines: Array<{ itemId: string; quantity: number }>
 }
 
-/** Adds a Sample Bag; staged quantity can never exceed the Stage 1 demand. */
-export function addBag(document: WorkflowDocument, draft: BagDraft): OpResult {
+/** Adds a Sample Bag without staging units that are not currently reserved. */
+export function addBag(document: WorkflowDocument, draft: BagDraft, items: InventoryItem[]): OpResult {
   const request = findRequest(document, draft.requestId)
   const blocked = editableInStage2(request)
   if (blocked || !request) return fail(document, blocked ?? "Request not found.")
   if (!draft.name.trim()) return fail(document, "Enter a bag name.")
   if (!draft.lines.length) return fail(document, "Add at least one sample line to the bag.")
+  const allocation = allocateReservations(document.requests, document.issues, items)[request.id]
+
+  const requestedByItem = new Map<string, number>()
+  for (const entry of draft.lines) {
+    if (!isWholeNumber(entry.quantity) || entry.quantity < 1) {
+      return fail(document, "Bag quantities must be whole numbers of at least 1.")
+    }
+    requestedByItem.set(entry.itemId, (requestedByItem.get(entry.itemId) ?? 0) + entry.quantity)
+  }
 
   const lines = []
-  for (const entry of draft.lines) {
-    const requestLine = request.lines.find((line) => line.itemId === entry.itemId)
-    if (!requestLine) return fail(document, `Sample ${entry.itemId} is not part of this request.`)
-    if (!isWholeNumber(entry.quantity) || entry.quantity < 1) {
-      return fail(document, `${requestLine.name}: bag quantity must be a whole number of at least 1.`)
-    }
-    const staged = baggedQuantity(document, request.id, entry.itemId)
-    if (staged + entry.quantity > requestLine.selectedQuantity) {
+  for (const [itemId, quantity] of requestedByItem) {
+    const requestLine = request.lines.find((line) => line.itemId === itemId)
+    if (!requestLine) return fail(document, `Sample ${itemId} is not part of this request.`)
+    const staged = Math.max(
+      0,
+      baggedQuantity(document, request.id, itemId) -
+        issuedQuantityFor(document.issues, request.id, itemId)
+    )
+    const reserved = allocation?.lines[itemId]?.reserved ?? 0
+    if (staged + quantity > reserved) {
       return fail(
         document,
-        `${requestLine.name}: only ${requestLine.selectedQuantity - staged} unit(s) remain unstaged for this bag.`
+        `${requestLine.name}: only ${Math.max(0, reserved - staged)} reserved unit(s) remain unstaged for this bag.`
       )
     }
     lines.push({
       id: "",
       requestLineId: requestLine.id,
-      itemId: entry.itemId,
+      itemId,
       name: requestLine.name,
       code: requestLine.code,
-      quantity: entry.quantity,
+      quantity,
     })
   }
 

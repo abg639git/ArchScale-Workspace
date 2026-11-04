@@ -93,12 +93,17 @@ function bagFor(
   lines: Array<{ itemId: string; quantity: number }>,
   name = "Test bag"
 ) {
+  const request = document.requests.find((entry) => entry.id === requestId)!
+  const stock = items().map((item) => ({
+    ...item,
+    stock: request.lines.find((line) => line.itemId === item.id)?.selectedQuantity ?? 0,
+  }))
   const result = addBag(document, {
     requestId,
     name,
     stockLocation: "Studio",
     lines,
-  })
+  }, stock)
   assert.equal(result.error, null, result.error ?? "")
   return { document: result.document, bag: result.document.bags[result.document.bags.length - 1] }
 }
@@ -228,16 +233,29 @@ test("6. Multiple requested samples retain individual quantities and allocations
   assert.deepEqual([lines.B.stage1Quantity, lines.B.reserved, lines.B.pending], [5, 2, 3])
 })
 
-test("7. Multiple bags cannot stage more than the sample request quantity", () => {
+test("7. Multiple bags cannot stage more than the reserved sample quantity", () => {
   const made = makeRequest(emptyWorkflowDocument(), [{ itemId: "A", quantity: 8 }])
+  const limitedStock = items().map((item) => item.id === "A" ? { ...item, stock: 4 } : item)
+  const unreserved = addBag(made.document, {
+    requestId: made.request.id, name: "Oversized bag", stockLocation: "Studio",
+    lines: [{ itemId: "A", quantity: 5 }],
+  }, limitedStock)
+  assert.ok(unreserved.error?.includes("only 4 reserved unit(s)"))
+  const duplicateLine = addBag(made.document, {
+    requestId: made.request.id, name: "Duplicate lines", stockLocation: "Studio",
+    lines: [{ itemId: "A", quantity: 3 }, { itemId: "A", quantity: 2 }],
+  }, limitedStock)
+  assert.ok(duplicateLine.error?.includes("only 4 reserved unit(s)"))
+
   const first = bagFor(made.document, made.request.id, [{ itemId: "A", quantity: 4 }], "Bag one")
   const second = bagFor(first.document, made.request.id, [{ itemId: "A", quantity: 4 }], "Bag two")
+  const stock = items().map((item) => item.id === "A" ? { ...item, stock: 8 } : item)
   const duplicate = addBag(second.document, {
     requestId: made.request.id, name: "Bag three", stockLocation: "Studio",
     lines: [{ itemId: "A", quantity: 1 }],
-  })
+  }, stock)
   assert.equal(second.document.bags.length, 2)
-  assert.ok(duplicate.error?.includes("remain unstaged"))
+  assert.ok(duplicate.error?.includes("reserved unit(s)"))
 })
 
 test("8. Partial issue deducts only issued units and preserves remaining demand", () => {

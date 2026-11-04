@@ -264,7 +264,7 @@ export function resetWorkflow(mode: ResetMode): string | null {
     return null
   }
 
-  const seed = buildDemoWorkflow(readJson<InventoryItem[]>(INVENTORY_STORAGE_KEY, initialItems))
+  const seed = buildDemoWorkflow(initialItems)
   const error = commitWithInventory(seed.document, seed.items)
   return error
 }
