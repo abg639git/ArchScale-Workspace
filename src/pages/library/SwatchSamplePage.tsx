@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 import { initialItems, type InventoryItem } from "@/pages/products/inventory-data"
 import { directoryData, type DirectoryEntry } from "@/components/split-view/data"
 
-type RequestStatus = "Draft" | "Submitted" | "Ready for Select & Issue"
+type RequestStatus = "Draft" | "Submitted" | "Ready for Select & Issue" | "Closed"
 
 type SampleRequestSelection = {
   itemId: string
@@ -47,7 +47,7 @@ type MaterialRequest = {
 
 const requestTypes = ["Project sample", "Client presentation", "Mock-up", "Replacement"]
 const priorities: MaterialRequest["priority"][] = ["Urgent", "High", "Normal", "Low"]
-const statusFilters = ["All", "Submitted", "Draft", "Ready for Select & Issue"] as const
+const statusFilters = ["All", "Submitted", "Draft", "Ready for Select & Issue", "Closed"] as const
 const requestsStorageKey = "archscale.samples.stage1.requests"
 const stage2RequestStorageKey = "archscale.samples.stage2.currentRequest"
 const stage2WorkflowsStorageKey = "archscale.samples.stage2.workflows"
@@ -56,6 +56,8 @@ const issuedRequestsStorageKey = "archscale.samples.requests"
 const inventoryStorageKey = "archscale.inventory.items"
 const stage4ReviewsStorageKey = "archscale.samples.stage4.reviews"
 const stage4CoordinatorNotificationsStorageKey = "archscale.samples.stage4.coordinatorNotifications"
+const stage5RecordsStorageKey = "archscale.samples.stage5.records"
+const stage5StockAdjustmentsStorageKey = "archscale.samples.stage5.stockAdjustments"
 
 const sampleConditions = ["Good", "Damaged"]
 const sampleIssueStatuses = ["Prepared", "Issued"]
@@ -1344,10 +1346,6 @@ function SampleQuantitySummary({ lines }: { lines: Stage2SampleLine[] }) {
   )
 }
 
-function EmptySampleStagePage() {
-  return <div className="min-h-0 w-full flex-1 bg-background" />
-}
-
 export function DeliveryReceiptPage() {
   const [dispatches, setDispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
   const [activeDispatchId, setActiveDispatchId] = React.useState(() => dispatches[0]?.id ?? "")
@@ -2024,7 +2022,7 @@ function ReviewReadOnly({ label, value }: { label: string; value: string }) {
 }
 
 function ReviewInput({
-  label, value, onChange, type = "text", min, max,
+  label, value, onChange, type = "text", min, max, disabled = false,
 }: {
   label: string
   value: string | number
@@ -2032,14 +2030,571 @@ function ReviewInput({
   type?: string
   min?: number
   max?: number
+  disabled?: boolean
 }) {
-  return <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>{label}</span><input aria-label={label} type={type} min={min} max={max} step={type === "number" ? "1" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} /></label>
+  return <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>{label}</span><input aria-label={label} type={type} min={min} max={max} step={type === "number" ? "1" : undefined} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className={cn(inputClass, disabled && "cursor-not-allowed bg-muted")} /></label>
 }
 
-function ReviewTextarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>{label}</span><textarea aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} rows={2} className={cn(inputClass, "h-auto min-h-20 resize-y py-2")} /></label>
+function ReviewTextarea({ label, value, onChange, disabled = false }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+  return <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>{label}</span><textarea aria-label={label} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} rows={2} className={cn(inputClass, "h-auto min-h-20 resize-y py-2", disabled && "cursor-not-allowed bg-muted")} /></label>
+}
+
+type Stage5Disposition = "Returned to Stock" | "Damaged" | "Lost" | "Retained by Client" | "Consumed" | "Converted to Permanent Sample"
+type Stage5SampleDisposition = {
+  id: string
+  disposition: Stage5Disposition | ""
+  quantity: number
+  notes: string
+}
+type Stage5SampleRecord = {
+  sampleId: string
+  sampleCode: string
+  sampleName: string
+  issuedQuantity: number
+  finalReviewDecision: Stage4Decision
+  sampleStatus: string
+  returnRequired: "Yes" | "No"
+  expectedReturnDate: string
+  actualReturnDate: string
+  returnedQuantity: number
+  returnStatus: "Pending" | "Return Arranged" | "Partially Returned" | "Fully Returned" | "Not Required"
+  condition: "Good" | "Damaged" | "Incomplete" | ""
+  returnNotes: string
+  receivedBackQuantity: number
+  verifiedReceivedBackQuantity: number
+  receivedDate: string
+  verifiedBy: string
+  inspectionNotes: string
+  stockedQuantity: number
+  stockUpdateStatus: string
+  verifiedCondition: "Good" | "Damaged" | "Incomplete" | ""
+  receiptVerifiedAt?: string
+  dispositions: Stage5SampleDisposition[]
+}
+type Stage5ClosureRecord = {
+  request: MaterialRequest
+  dispatchId: string
+  project: string
+  samples: Stage5SampleRecord[]
+  closureStatus: "Pending Closure" | "Ready to Close" | "Closed"
+  closureDate: string
+  closedBy: string
+  closureNotes: string
+  closedAt?: string
+  history: Array<{ action: string; at: string }>
+}
+type Stage5StockAdjustment = {
+  id: string
+  requestId: string
+  dispatchId: string
+  sampleId: string
+  sampleName: string
+  quantity: number
+  reason: string
+  createdAt: string
+}
+
+const returnStatuses: Stage5SampleRecord["returnStatus"][] = ["Pending", "Return Arranged", "Partially Returned", "Fully Returned", "Not Required"]
+const returnConditions: NonNullable<Stage5SampleRecord["condition"]>[] = ["Good", "Damaged", "Incomplete"]
+const finalDispositions: Stage5Disposition[] = ["Returned to Stock", "Damaged", "Lost", "Retained by Client", "Consumed", "Converted to Permanent Sample"]
+
+function hasFinalReviewForAllIssuedSamples(dispatch: Stage2Dispatch, reviews: Stage4SampleReview[]): boolean {
+  const issued = dispatch.samples.filter((sample) => sample.issuedQuantity > 0)
+  return issued.length > 0 &&
+    Boolean(dispatch.delivery?.receiptConfirmedAt) &&
+    issued.every((sample) => reviews.some((review) =>
+      review.dispatchId === dispatch.id &&
+      review.sampleId === sample.itemId &&
+      Boolean(review.cycles.at(-1)?.finalDecision)
+    ))
+}
+
+function createStage5Record(dispatch: Stage2Dispatch, reviews: Stage4SampleReview[]): Stage5ClosureRecord {
+  const samples = dispatch.samples.filter((sample) => sample.issuedQuantity > 0).map((sample): Stage5SampleRecord => {
+    const review = reviews.find((entry) => entry.dispatchId === dispatch.id && entry.sampleId === sample.itemId)
+    const latestDecision = review?.cycles.at(-1)?.finalDecision ?? "Changes Required"
+    return {
+      sampleId: sample.itemId,
+      sampleCode: sample.code,
+      sampleName: sample.name,
+      issuedQuantity: sample.issuedQuantity,
+      finalReviewDecision: latestDecision,
+      sampleStatus: `Issued · ${dispatch.delivery?.receiptStatus ?? "Receipt pending"} · ${latestDecision}`,
+      returnRequired: "Yes",
+      expectedReturnDate: dispatch.expectedReturnDate,
+      actualReturnDate: "",
+      returnedQuantity: 0,
+      returnStatus: "Pending",
+      condition: "",
+      returnNotes: "",
+      receivedBackQuantity: 0,
+      verifiedReceivedBackQuantity: 0,
+      receivedDate: "",
+      verifiedBy: "",
+      inspectionNotes: "",
+      stockedQuantity: 0,
+      stockUpdateStatus: "Not updated",
+      verifiedCondition: "",
+      dispositions: [],
+    }
+  })
+  return {
+    request: dispatch.request,
+    dispatchId: dispatch.id,
+    project: dispatch.request.project,
+    samples,
+    closureStatus: "Pending Closure",
+    closureDate: "",
+    closedBy: "",
+    closureNotes: "",
+    history: [],
+  }
+}
+
+function stage5Totals(record: Stage5ClosureRecord) {
+  return record.samples.reduce((totals, sample) => {
+    const accounted = sample.dispositions.reduce((sum, entry) => sum + entry.quantity, 0)
+    return {
+      issued: totals.issued + sample.issuedQuantity,
+      returned: totals.returned + sample.receivedBackQuantity,
+      accounted: totals.accounted + accounted,
+      outstanding: totals.outstanding + Math.max(0, sample.issuedQuantity - accounted),
+    }
+  }, { issued: 0, returned: 0, accounted: 0, outstanding: 0 })
+}
+
+function isStage5ReadyToClose(record: Stage5ClosureRecord): boolean {
+  return record.samples.length > 0 && record.samples.every((sample) => {
+    const dispositionTotal = sample.dispositions.reduce((sum, entry) => sum + entry.quantity, 0)
+    const returnedToStock = sample.dispositions
+      .filter((entry) => entry.disposition === "Returned to Stock")
+      .reduce((sum, entry) => sum + entry.quantity, 0)
+    const returnIsVerified = sample.returnRequired === "No"
+      ? sample.returnedQuantity === 0 && sample.receivedBackQuantity === 0
+      : sample.returnedQuantity <= sample.issuedQuantity &&
+        sample.receivedBackQuantity === sample.returnedQuantity &&
+        (sample.receivedBackQuantity === 0 || (
+          Boolean(sample.receiptVerifiedAt) &&
+          sample.verifiedReceivedBackQuantity === sample.receivedBackQuantity &&
+          Boolean(sample.actualReturnDate) &&
+          Boolean(sample.receivedDate) &&
+          Boolean(sample.verifiedBy.trim()) &&
+          Boolean(sample.condition) &&
+          (sample.condition !== "Good" || sample.stockedQuantity === sample.receivedBackQuantity)
+        ))
+    return dispositionTotal === sample.issuedQuantity &&
+      sample.dispositions.every((entry) => Boolean(entry.disposition) && Number.isInteger(entry.quantity) && entry.quantity > 0) &&
+      returnedToStock === sample.stockedQuantity &&
+      returnIsVerified
+  })
 }
 
 export function ReturnsClosurePage() {
-  return <EmptySampleStagePage />
+  const [dispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
+  const [reviews] = usePersistentState<Stage4SampleReview[]>(stage4ReviewsStorageKey, [])
+  const [requests, setRequests] = usePersistentState<MaterialRequest[]>(requestsStorageKey, [])
+  const [records, setRecords] = usePersistentState<Stage5ClosureRecord[]>(stage5RecordsStorageKey, [])
+  const [items, setItems] = usePersistentState<InventoryItem[]>(inventoryStorageKey, initialItems)
+  const [adjustments, setAdjustments] = usePersistentState<Stage5StockAdjustment[]>(stage5StockAdjustmentsStorageKey, [])
+  const [activeDispatchId, setActiveDispatchId] = React.useState("")
+  const [record, setRecord] = React.useState<Stage5ClosureRecord | null>(null)
+  const [error, setError] = React.useState("")
+  const [message, setMessage] = React.useState("")
+  const [confirmClose, setConfirmClose] = React.useState(false)
+
+  const eligibleDispatches = dispatches.filter((dispatch) => hasFinalReviewForAllIssuedSamples(dispatch, reviews))
+
+  const selectedDispatch = eligibleDispatches.find((dispatch) => dispatch.id === activeDispatchId)
+  const closed = record?.closureStatus === "Closed"
+  const totals = record ? stage5Totals(record) : { issued: 0, returned: 0, accounted: 0, outstanding: 0 }
+  const readyToClose = record ? isStage5ReadyToClose(record) : false
+
+  const updateSample = (sampleId: string, update: Partial<Stage5SampleRecord>) => {
+    if (!record || closed) return
+    setRecord({
+      ...record,
+      samples: record.samples.map((sample) => sample.sampleId === sampleId ? { ...sample, ...update } : sample),
+    })
+    setError("")
+    setMessage("")
+  }
+
+  const saveDraft = () => {
+    if (!record || closed) return
+    const next: Stage5ClosureRecord = {
+      ...record,
+      closureStatus: isStage5ReadyToClose(record) ? "Ready to Close" : "Pending Closure",
+      history: [...record.history, { action: "Return and disposition details saved as draft", at: currentTimestamp() }],
+    }
+    try {
+      const nextRecords = [next, ...records.filter((entry) => entry.dispatchId !== next.dispatchId)]
+      window.localStorage.setItem(stage5RecordsStorageKey, JSON.stringify(nextRecords))
+      setRecords(nextRecords)
+      setRecord(next)
+      setError("")
+      setMessage(`${next.request.id} saved as a draft.`)
+    } catch {
+      setError("Stage 5 draft could not be saved in this browser.")
+    }
+  }
+
+  const verifyReturnReceipt = (sampleId: string) => {
+    if (!record || closed) return
+    const sample = record.samples.find((entry) => entry.sampleId === sampleId)
+    if (!sample) return
+    if (sample.returnRequired !== "Yes") {
+      setError("Mark Return Required as Yes before recording a return receipt.")
+      return
+    }
+    if (!Number.isInteger(sample.receivedBackQuantity) ||
+      sample.receivedBackQuantity < sample.verifiedReceivedBackQuantity ||
+      sample.receivedBackQuantity > sample.returnedQuantity || sample.receivedBackQuantity > sample.issuedQuantity) {
+      setError(`Received Back Quantity for ${sample.sampleName} must not exceed the returned or issued quantity.`)
+      return
+    }
+    if (sample.receivedBackQuantity > 0 && (!sample.receivedDate || !sample.actualReturnDate || !sample.verifiedBy.trim() || !sample.condition)) {
+      setError(`Enter the actual return date, received date, verifier, and condition for ${sample.sampleName}.`)
+      return
+    }
+    if (sample.verifiedReceivedBackQuantity > 0 && sample.condition !== sample.verifiedCondition) {
+      setError(`The verified condition for ${sample.sampleName} cannot be changed after a return receipt is recorded.`)
+      return
+    }
+    if (sample.receivedBackQuantity === sample.verifiedReceivedBackQuantity && sample.receiptVerifiedAt) {
+      setMessage(`The current return quantity for ${sample.sampleName} has already been verified.`)
+      return
+    }
+    if (sample.receivedBackQuantity === 0) {
+      setError(`Enter a received-back quantity greater than zero to verify a physical return for ${sample.sampleName}.`)
+      return
+    }
+    const goodStockDelta = sample.condition === "Good" && sample.receivedBackQuantity > sample.stockedQuantity
+      ? sample.receivedBackQuantity - sample.stockedQuantity
+      : 0
+
+    let currentItems = items
+    let currentAdjustments = adjustments
+    try {
+      const savedItems = window.localStorage.getItem(inventoryStorageKey)
+      if (savedItems !== null) currentItems = JSON.parse(savedItems) as InventoryItem[]
+      const savedAdjustments = window.localStorage.getItem(stage5StockAdjustmentsStorageKey)
+      if (savedAdjustments !== null) currentAdjustments = JSON.parse(savedAdjustments) as Stage5StockAdjustment[]
+    } catch {
+      setError("Current inventory or stock adjustment history could not be read; no return was verified.")
+      return
+    }
+    const stockAdjustmentId = `${record.dispatchId}-${sample.sampleId}-return-${sample.verifiedReceivedBackQuantity}-${sample.receivedBackQuantity}`
+    if (goodStockDelta > 0 && currentAdjustments.some((entry) => entry.id === stockAdjustmentId)) {
+      setError(`This return quantity for ${sample.sampleName} has already been applied to stock. Refresh the page before recording another return.`)
+      return
+    }
+    if (goodStockDelta > 0 && !currentItems.some((item) => item.id === sample.sampleId)) {
+      setError(`${sample.sampleName} no longer exists in the inventory catalogue; stock was not updated.`)
+      return
+    }
+
+    const at = currentTimestamp()
+    const verifiedSample: Stage5SampleRecord = {
+      ...sample,
+      verifiedReceivedBackQuantity: sample.receivedBackQuantity,
+      verifiedCondition: sample.condition,
+      stockedQuantity: sample.stockedQuantity + goodStockDelta,
+      stockUpdateStatus: goodStockDelta > 0
+        ? "Updated"
+        : sample.receivedBackQuantity > 0 && sample.condition !== "Good"
+          ? "Verified - not added to stock"
+          : sample.receiptVerifiedAt
+            ? sample.stockUpdateStatus
+            : "No stock change",
+      receiptVerifiedAt: at,
+    }
+    const nextRecord: Stage5ClosureRecord = {
+      ...record,
+      samples: record.samples.map((entry) => entry.sampleId === sampleId ? verifiedSample : entry),
+      closureStatus: "Pending Closure",
+      history: [...record.history, {
+        action: `${sample.receivedBackQuantity} returned unit(s) verified for ${sample.sampleName}${goodStockDelta > 0 ? `; ${goodStockDelta} good unit(s) returned to stock` : "; no stock added"}`,
+        at,
+      }],
+    }
+    const nextRecords = [nextRecord, ...records.filter((entry) => entry.dispatchId !== record.dispatchId)]
+    const nextAdjustments = goodStockDelta > 0
+      ? [{
+          id: stockAdjustmentId,
+          requestId: record.request.id,
+          dispatchId: record.dispatchId,
+          sampleId: sample.sampleId,
+          sampleName: sample.sampleName,
+          quantity: goodStockDelta,
+          reason: "Verified good sample return",
+          createdAt: at,
+        }, ...currentAdjustments]
+      : currentAdjustments
+    const nextItems = goodStockDelta > 0
+      ? currentItems.map((item) => item.id === sample.sampleId ? { ...item, stock: item.stock + goodStockDelta } : item)
+      : currentItems
+    const keys = [stage5RecordsStorageKey, inventoryStorageKey, stage5StockAdjustmentsStorageKey]
+    const previous = keys.map((key) => [key, window.localStorage.getItem(key)] as const)
+    try {
+      window.localStorage.setItem(stage5RecordsStorageKey, JSON.stringify(nextRecords))
+      if (goodStockDelta > 0) {
+        window.localStorage.setItem(inventoryStorageKey, JSON.stringify(nextItems))
+        window.localStorage.setItem(stage5StockAdjustmentsStorageKey, JSON.stringify(nextAdjustments))
+      }
+    } catch {
+      try {
+        previous.forEach(([key, value]) => {
+          if (value === null) window.localStorage.removeItem(key)
+          else window.localStorage.setItem(key, value)
+        })
+      } catch {
+        setError("Return verification failed and browser storage could not be restored.")
+        return
+      }
+      setError("Return verification and stock update could not be saved; no success was recorded.")
+      return
+    }
+    setRecord(nextRecord)
+    setRecords(nextRecords)
+    if (goodStockDelta > 0) {
+      setItems(nextItems)
+      setAdjustments(nextAdjustments)
+    }
+    setError("")
+    setMessage(goodStockDelta > 0
+      ? `${goodStockDelta} verified good unit(s) of ${sample.sampleName} returned to available stock.`
+      : `Return receipt verified for ${sample.sampleName}; no available stock was added.`)
+  }
+
+  const closeRequest = () => {
+    if (!record || closed) return
+    if (!readyToClose) {
+      setError("Cannot close this request until all issued quantities have verified returns where applicable and a final disposition.")
+      return
+    }
+    if (!record.closedBy.trim() || !record.closureDate) {
+      setError("Enter Closed By and Closure Date before closing the request.")
+      return
+    }
+    const at = currentTimestamp()
+    const nextRecord: Stage5ClosureRecord = {
+      ...record,
+      closureStatus: "Closed",
+      history: [...record.history, { action: `Request closed by ${record.closedBy}`, at }],
+      closedAt: at,
+    }
+    const nextRecords = [nextRecord, ...records.filter((entry) => entry.dispatchId !== record.dispatchId)]
+    const nextRequests = requests.map((request) => request.id === record.request.id
+      ? { ...request, status: "Closed" as const, closedAt: at }
+      : request)
+    const keys = [stage5RecordsStorageKey, requestsStorageKey]
+    const previous = keys.map((key) => [key, window.localStorage.getItem(key)] as const)
+    try {
+      window.localStorage.setItem(stage5RecordsStorageKey, JSON.stringify(nextRecords))
+      window.localStorage.setItem(requestsStorageKey, JSON.stringify(nextRequests))
+    } catch {
+      try {
+        previous.forEach(([key, value]) => {
+          if (value === null) window.localStorage.removeItem(key)
+          else window.localStorage.setItem(key, value)
+        })
+      } catch {
+        setError("Request closure failed and browser storage could not be restored.")
+        return
+      }
+      setError("Request closure could not be saved; the request remains open.")
+      return
+    }
+    setRecord(nextRecord)
+    setRecords(nextRecords)
+    setRequests(nextRequests)
+    setConfirmClose(false)
+    setError("")
+    setMessage(`${record.request.id} is closed. Its Stage 1 request status has been updated.`)
+  }
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">Stage 5</p>
+          <h1 className="mt-1 text-xl font-semibold">Returns &amp; Closure</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Verify sample returns, account for every issued unit, and close the original request.</p>
+        </div>
+        <label className="min-w-[220px] text-xs font-medium">
+          Reviewed Stage 4 request
+          <select aria-label="Reviewed Stage 4 request" value={activeDispatchId} onChange={(event) => {
+            const dispatchId = event.target.value
+            const dispatch = eligibleDispatches.find((entry) => entry.id === dispatchId)
+            setActiveDispatchId(dispatchId)
+            setRecord(dispatch
+              ? records.find((entry) => entry.dispatchId === dispatch.id) ?? createStage5Record(dispatch, reviews)
+              : null)
+            setError("")
+            setMessage("")
+            setConfirmClose(false)
+          }} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm" disabled={!eligibleDispatches.length}>
+            <option value="">Select a reviewed request</option>
+            {eligibleDispatches.map((dispatch) => <option key={dispatch.id} value={dispatch.id}>{dispatch.request.id} · {dispatch.request.project}</option>)}
+          </select>
+        </label>
+      </header>
+
+      <main className="min-h-0 flex-1 overflow-y-auto p-5">
+        {!record || !selectedDispatch ? (
+          <EmptyStage2 message={eligibleDispatches.length
+            ? "Select a reviewed Stage 4 request to manage its issued samples."
+            : "No Stage 2 dispatch is ready for closure. A request appears here after Stage 3 receipt confirmation and a recorded Stage 4 final decision for each issued sample."} />
+        ) : (
+          <div className="space-y-4">
+            <section className="rounded-lg border border-border bg-muted/20 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-primary">{record.request.id} · {record.project}</p>
+                  <p className="mt-1 text-sm">Requester: {record.request.requester} · Coordinator: {record.request.assignedCoordinator}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{record.request.sampleDetails}</p>
+                </div>
+                <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", closed ? "bg-emerald-100 text-emerald-800" : readyToClose ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800")}>{closed ? "Closed" : readyToClose ? "Ready to Close" : "Pending Closure"}</span>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ReviewReadOnly label="Stage 2 issued quantity" value={String(totals.issued)} />
+                <ReviewReadOnly label="Stage 3 received quantity" value={String(selectedDispatch.delivery?.receivedQuantity ?? 0)} />
+                <ReviewReadOnly label="Stage 4 final decisions" value={record.samples.map((sample) => `${sample.sampleName}: ${sample.finalReviewDecision}`).join("; ")} />
+                <ReviewReadOnly label="Request status" value={record.request.status} />
+              </dl>
+            </section>
+
+            <section className="space-y-3 rounded-lg border border-border p-4">
+              <div>
+                <h2 className="font-semibold">1. Sample Return</h2>
+                <p className="text-sm text-muted-foreground">Record return arrangements and quantities for issued sample references.</p>
+              </div>
+              <div className="space-y-3">
+                {record.samples.map((sample) => (
+                  <article key={sample.sampleId} className="rounded-md border border-border p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div><h3 className="font-medium">{sample.sampleName}</h3><p className="text-xs text-muted-foreground">{sample.sampleCode} · {sample.sampleId}</p></div>
+                      <span className="rounded-full bg-muted px-2 py-1 text-xs">{sample.sampleStatus}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <ReviewReadOnly label="Issued quantity" value={String(sample.issuedQuantity)} />
+                      <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>Return Required</span><select disabled={closed || Boolean(sample.receiptVerifiedAt)} value={sample.returnRequired} onChange={(event) => {
+                        const returnRequired = event.target.value as Stage5SampleRecord["returnRequired"]
+                        updateSample(sample.sampleId, returnRequired === "No"
+                          ? { returnRequired, returnStatus: "Not Required", returnedQuantity: 0, actualReturnDate: "", condition: "", returnNotes: "", receivedBackQuantity: 0, receivedDate: "", verifiedBy: "", inspectionNotes: "" }
+                          : { returnRequired, returnStatus: "Pending" })
+                      }} className={inputClass}><option value="Yes">Yes</option><option value="No">No</option></select></label>
+                      {sample.returnRequired === "Yes" ? <>
+                        <ReviewInput label="Expected Return Date" value={sample.expectedReturnDate} type="date" disabled={closed} onChange={(value) => updateSample(sample.sampleId, { expectedReturnDate: value })} />
+                        <ReviewInput label="Actual Return Date" value={sample.actualReturnDate} type="date" disabled={closed} onChange={(value) => updateSample(sample.sampleId, { actualReturnDate: value })} />
+                        <ReviewInput label="Returned Quantity" value={sample.returnedQuantity} type="number" min={sample.verifiedReceivedBackQuantity} max={sample.issuedQuantity} disabled={closed} onChange={(value) => {
+                          const quantity = Number(value)
+                          if (!Number.isInteger(quantity) || quantity < sample.verifiedReceivedBackQuantity || quantity > sample.issuedQuantity) return
+                          updateSample(sample.sampleId, { returnedQuantity: quantity, returnStatus: quantity === 0 ? "Pending" : quantity === sample.issuedQuantity ? "Fully Returned" : "Partially Returned" })
+                        }} />
+                        <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>Return Status</span><select disabled={closed} value={sample.returnStatus} onChange={(event) => updateSample(sample.sampleId, { returnStatus: event.target.value as Stage5SampleRecord["returnStatus"] })} className={inputClass}>{returnStatuses.filter((status) => status !== "Not Required").map((status) => <option key={status} disabled={(status === "Pending" && sample.returnedQuantity > 0) || (status === "Partially Returned" && (sample.returnedQuantity === 0 || sample.returnedQuantity >= sample.issuedQuantity)) || (status === "Fully Returned" && sample.returnedQuantity !== sample.issuedQuantity)}>{status}</option>)}</select></label>
+                        <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>Condition</span><select disabled={closed || sample.verifiedReceivedBackQuantity > 0} value={sample.condition} onChange={(event) => updateSample(sample.sampleId, { condition: event.target.value as Stage5SampleRecord["condition"] })} className={inputClass}><option value="">Select condition</option>{returnConditions.map((condition) => <option key={condition}>{condition}</option>)}</select></label>
+                        <ReviewReadOnly label="Outstanding return quantity" value={String(Math.max(0, sample.issuedQuantity - sample.returnedQuantity))} />
+                      </> : <ReviewReadOnly label="Return Status" value="Not Required" />}
+                    </div>
+                    {sample.returnRequired === "Yes" && <div className="mt-3"><ReviewTextarea label="Return Notes" value={sample.returnNotes} disabled={closed} onChange={(value) => updateSample(sample.sampleId, { returnNotes: value })} /></div>}
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3 rounded-lg border border-border p-4">
+              <div><h2 className="font-semibold">2. Return Receipt &amp; Inventory Update</h2><p className="text-sm text-muted-foreground">Only verified good-condition returns increase available stock. Each stock addition is logged and duplicate verification does not add it again.</p></div>
+              {record.samples.map((sample) => (
+                <article key={sample.sampleId} className="rounded-md border border-border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-medium">{sample.sampleName}</h3><span className={cn("rounded-full px-2 py-1 text-xs", sample.stockUpdateStatus === "Updated" ? "bg-emerald-100 text-emerald-800" : "bg-muted")}>{sample.stockUpdateStatus}</span></div>
+                  {sample.returnRequired === "Yes" ? <>
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <ReviewInput label="Received Back Quantity" value={sample.receivedBackQuantity} type="number" min={sample.verifiedReceivedBackQuantity} max={sample.returnedQuantity} disabled={closed} onChange={(value) => {
+                        const quantity = Number(value)
+                        if (!Number.isInteger(quantity) || quantity < sample.verifiedReceivedBackQuantity || quantity > sample.returnedQuantity) return
+                        updateSample(sample.sampleId, { receivedBackQuantity: quantity })
+                      }} />
+                      <ReviewInput label="Received Date" value={sample.receivedDate} type="date" disabled={closed} onChange={(value) => updateSample(sample.sampleId, { receivedDate: value })} />
+                      <ReviewInput label="Verified By" value={sample.verifiedBy} disabled={closed} onChange={(value) => updateSample(sample.sampleId, { verifiedBy: value })} />
+                      <ReviewReadOnly label="Added to available stock" value={String(sample.stockedQuantity)} />
+                    </div>
+                    <div className="mt-3"><ReviewTextarea label="Inspection Notes" value={sample.inspectionNotes} disabled={closed} onChange={(value) => updateSample(sample.sampleId, { inspectionNotes: value })} /></div>
+                    {!closed && <button type="button" onClick={() => verifyReturnReceipt(sample.sampleId)} disabled={sample.receivedBackQuantity === 0 || sample.receivedBackQuantity === sample.verifiedReceivedBackQuantity && sample.receiptVerifiedAt !== undefined} className="mt-3 h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40">{sample.receiptVerifiedAt ? "Verify additional return" : "Verify return & update stock"}</button>}
+                    {sample.receiptVerifiedAt && <p className="mt-2 text-xs text-muted-foreground">Verified {formatRequestDate(sample.receivedDate)} by {sample.verifiedBy}. {sample.verifiedReceivedBackQuantity} unit(s) physically received.</p>}
+                  </> : <p className="mt-2 text-sm text-muted-foreground">No return receipt is required for this sample.</p>}
+                </article>
+              ))}
+            </section>
+
+            <section className="space-y-3 rounded-lg border border-border p-4">
+              <div><h2 className="font-semibold">3. Final Disposition</h2><p className="text-sm text-muted-foreground">Account for every issued unit. Dispositions are tracked separately for each sample.</p></div>
+              {record.samples.map((sample) => {
+                const dispositionTotal = sample.dispositions.reduce((sum, item) => sum + item.quantity, 0)
+                return (
+                  <article key={sample.sampleId} className="rounded-md border border-border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-medium">{sample.sampleName}</h3><p className="text-xs text-muted-foreground">{sample.issuedQuantity} issued · {dispositionTotal} accounted · {Math.max(0, sample.issuedQuantity - dispositionTotal)} outstanding</p></div><span className="text-xs text-muted-foreground">Final review: {sample.finalReviewDecision}</span></div>
+                    {sample.dispositions.map((entry) => (
+                      <div key={entry.id} className="mt-3 grid grid-cols-1 items-end gap-2 sm:grid-cols-[1.4fr_0.7fr_1.5fr_auto]">
+                        <label className="block min-w-0 text-xs font-medium"><span className={labelClass}>Final Disposition</span><select disabled={closed} value={entry.disposition} onChange={(event) => updateSample(sample.sampleId, { dispositions: sample.dispositions.map((item) => item.id === entry.id ? { ...item, disposition: event.target.value as Stage5Disposition | "" } : item) })} className={inputClass}><option value="">Select disposition</option>{finalDispositions.map((disposition) => <option key={disposition}>{disposition}</option>)}</select></label>
+                        <ReviewInput label="Quantity" value={entry.quantity} type="number" min={1} max={sample.issuedQuantity} disabled={closed} onChange={(value) => {
+                          const quantity = Number(value)
+                          if (!Number.isInteger(quantity) || quantity < 1) return
+                          const otherTotal = dispositionTotal - entry.quantity
+                          if (otherTotal + quantity > sample.issuedQuantity) {
+                            setError(`Disposition quantities for ${sample.sampleName} cannot exceed the issued quantity.`)
+                            return
+                          }
+                          updateSample(sample.sampleId, { dispositions: sample.dispositions.map((item) => item.id === entry.id ? { ...item, quantity } : item) })
+                        }} />
+                        <ReviewInput label="Disposition Notes" value={entry.notes} disabled={closed} onChange={(value) => updateSample(sample.sampleId, { dispositions: sample.dispositions.map((item) => item.id === entry.id ? { ...item, notes: value } : item) })} />
+                        {!closed && <button type="button" aria-label={`Remove ${entry.disposition} disposition for ${sample.sampleName}`} onClick={() => updateSample(sample.sampleId, { dispositions: sample.dispositions.filter((item) => item.id !== entry.id) })} className="h-10 rounded-md border border-input px-3 text-sm hover:bg-accent">Remove</button>}
+                      </div>
+                    ))}
+                    {!closed && <button type="button" onClick={() => updateSample(sample.sampleId, { dispositions: [...sample.dispositions, { id: `${sample.sampleId}-${Date.now()}`, disposition: "", quantity: 0, notes: "" }] })} disabled={dispositionTotal >= sample.issuedQuantity || sample.dispositions.some((entry) => !entry.disposition)} className="mt-3 h-8 rounded-md border border-input px-3 text-xs font-medium hover:bg-accent disabled:opacity-40"><Plus className="mr-1 inline size-3.5" />Add disposition</button>}
+                  </article>
+                )
+              })}
+            </section>
+
+            <section className="space-y-3 rounded-lg border border-border p-4">
+              <div><h2 className="font-semibold">4. Request Closure</h2><p className="text-sm text-muted-foreground">Close only after each issued quantity is dispositioned and all physical returns are verified.</p></div>
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ReviewReadOnly label="Total Issued Quantity" value={String(totals.issued)} />
+                <ReviewReadOnly label="Total Returned Quantity" value={String(totals.returned)} />
+                <ReviewReadOnly label="Total Accounted Quantity" value={String(totals.accounted)} />
+                <ReviewReadOnly label="Outstanding Quantity" value={String(totals.outstanding)} />
+              </dl>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ReviewReadOnly label="Closure Status" value={closed ? "Closed" : readyToClose ? "Ready to Close" : "Pending Closure"} />
+                <ReviewInput label="Closure Date" value={record.closureDate} type="date" disabled={closed} onChange={(value) => setRecord({ ...record, closureDate: value })} />
+                <ReviewInput label="Closed By" value={record.closedBy} disabled={closed} onChange={(value) => setRecord({ ...record, closedBy: value })} />
+              </div>
+              <ReviewTextarea label="Closure Notes" value={record.closureNotes} disabled={closed} onChange={(value) => setRecord({ ...record, closureNotes: value })} />
+              {!closed && <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={saveDraft} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Save as Draft</button>
+                <button type="button" onClick={() => {
+                  if (!readyToClose) {
+                    setError("Cannot close this request until every issued quantity is accounted for and all returns are verified.")
+                    return
+                  }
+                  setError("")
+                  setConfirmClose(true)
+                }} disabled={!readyToClose} className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">Close Request</button>
+              </div>}
+              {closed && <p role="status" className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">This request is closed and read-only.</p>}
+              {confirmClose && !closed && <div role="alertdialog" aria-modal="true" aria-labelledby="stage5-close-confirm-title" className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                <h3 id="stage5-close-confirm-title" className="font-semibold">Confirm request closure</h3>
+                <p className="mt-1 text-sm">This closes {record.request.id} and updates its original Stage 1 request. The record will become read-only.</p>
+                <div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setConfirmClose(false)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">Cancel</button><button type="button" onClick={closeRequest} className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">Confirm Closure</button></div>
+              </div>}
+              {record.history.length > 0 && <div className="border-t border-border pt-3"><h3 className="text-sm font-semibold">Closure History</h3><ul className="mt-2 space-y-1">{record.history.map((entry, index) => <li key={`${entry.at}-${index}`} className="text-xs text-muted-foreground">{entry.action} · {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.at))}</li>)}</ul></div>}
+            </section>
+          </div>
+        )}
+        {error && <p role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+        {message && <p role="status" className="mt-4 text-sm text-muted-foreground">{message}</p>}
+      </main>
+    </div>
+  )
 }
