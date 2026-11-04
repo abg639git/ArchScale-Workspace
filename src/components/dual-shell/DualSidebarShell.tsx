@@ -180,6 +180,17 @@ function ShellContent({
     if (!open) toggleSidebar()
   }, [open, setActiveItem, setActiveRailId, toggleSidebar])
 
+  React.useEffect(() => {
+    const handleSampleStageNavigation = (event: Event) => {
+      const stage = (event as CustomEvent<{ stage?: unknown }>).detail?.stage
+      if (typeof stage !== "number" || !Number.isInteger(stage)) return
+      const item = SAMPLE_MANAGEMENT_STAGES[stage - 1]
+      if (item) navigateTo("library", item)
+    }
+    window.addEventListener("archscale:navigate-sample-stage", handleSampleStageNavigation)
+    return () => window.removeEventListener("archscale:navigate-sample-stage", handleSampleStageNavigation)
+  }, [navigateTo])
+
   // Stable handlers: without these, fresh closures are created on every render
   // and React.memo on <AppRail>/<ApplicationSidebar> could never engage.
   const handleRailSelect = React.useCallback(

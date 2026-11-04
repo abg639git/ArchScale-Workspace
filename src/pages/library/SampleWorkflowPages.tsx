@@ -206,10 +206,16 @@ function StageLayout({
         </header>
         <nav aria-label="Sample workflow stages" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {steps.map(({ label, Icon }, index) => (
-            <div key={label} aria-current={index + 1 === stage ? "step" : undefined} className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-2.5 py-2 text-center text-xs font-semibold transition-colors ${index + 1 === stage ? `${theme.active} text-white shadow-md` : "border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white"}`}>
+            <button
+              key={label}
+              type="button"
+              aria-current={index + 1 === stage ? "step" : undefined}
+              onClick={() => window.dispatchEvent(new CustomEvent("archscale:navigate-sample-stage", { detail: { stage: index + 1 } }))}
+              className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-2.5 py-2 text-center text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${index + 1 === stage ? `${theme.active} text-white shadow-md` : "border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white"}`}
+            >
               <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${index + 1 === stage ? theme.activeIcon : stageThemes[index].icon}`} />
               <span><span className={`mr-1.5 text-[10px] ${index + 1 === stage ? theme.step : "text-slate-400"}`}>{String(index + 1).padStart(2, "0")}</span>{label}</span>
-            </div>
+            </button>
           ))}
         </nav>
         {children}
