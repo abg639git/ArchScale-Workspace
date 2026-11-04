@@ -424,6 +424,41 @@ test("13. Review decisions are sample-specific and deferred review needs a date"
   assert.equal(deferred.error, null)
   assert.equal(deferred.document.reviews.find((review) => review.id === revA.id)?.cycles.length, 1)
   assert.notEqual(deferred.document.reviews.find((review) => review.itemId === "B")?.cycles.length, 1)
+  assert.ok(recordFinalApproval(deferred.document, {
+    reviewId: revA.id, finalApproval: "Approved", decisionDate: "2026-12-12",
+    approvedBy: "Approver", coordinator: "Coordinator", finalComments: "",
+  }).error?.includes("still pending"))
+  assert.ok(startReview(deferred.document, {
+    reviewId: revA.id, reviewer: "Studio", reviewerRole: "Studio", dueDate: "2026-12-20",
+  }).error?.includes("deferred until"))
+
+  const dueToday = new Date().toISOString().slice(0, 10)
+  const dueDocument = {
+    ...deferred.document,
+    reviews: deferred.document.reviews.map((review) => review.id === revA.id
+      ? { ...review, cycles: review.cycles.map((cycle, index) => index === 0 ? { ...cycle, nextReviewDate: dueToday } : cycle) }
+      : review),
+  }
+  const resumed = startReview(dueDocument, {
+    reviewId: revA.id, reviewer: "Studio", reviewerRole: "Studio", dueDate: dueToday,
+  })
+  assert.equal(resumed.error, null, resumed.error ?? "")
+  const resumedReview = resumed.document.reviews.find((review) => review.id === revA.id)!
+  assert.equal(resumedReview.cycles.length, 2)
+  assert.equal(resumedReview.cycles[0].decision, "Deferred")
+  assert.equal(resumedReview.cycles[0].nextReviewDate, dueToday)
+  const followUpDecision = recordReviewDecision(resumed.document, {
+    requestId: made.request.id, reviewId: revA.id, reviewer: "Studio", reviewerRole: "Studio",
+    reviewDate: dueToday, dueDate: dueToday, decision: "Approved", comments: "", feedback: "",
+    followUp: "None", returnInstruction: "Return required",
+  })
+  assert.equal(followUpDecision.error, null, followUpDecision.error ?? "")
+  assert.equal(followUpDecision.document.reviews.find((review) => review.id === revA.id)?.cycles[0].decision, "Deferred")
+  const finalDecision = recordFinalApproval(followUpDecision.document, {
+    reviewId: revA.id, finalApproval: "Approved", decisionDate: dueToday,
+    approvedBy: "Approver", coordinator: "Coordinator", finalComments: "",
+  })
+  assert.equal(finalDecision.error, null, finalDecision.error ?? "")
 })
 
 test("13a. Review decisions require a started review and matching request", () => {

@@ -57,6 +57,7 @@ import {
   receiptLineId,
   requestLineId,
   suggestReceiptStatus,
+  today,
   validateIssue,
   validateReceipt,
   validateRequestForAccept,
@@ -711,11 +712,19 @@ export function startReview(
   if (review.receivedQuantity <= 0) return fail(document, "Only confirmed received samples can be sent for review.")
 
   const existing = latestCycle(review)
-  if (existing?.decision && existing.finalApproval === "Pending") {
+  const isDeferred = existing?.decision === "Deferred"
+  if (isDeferred && existing.finalApproval !== "Pending") {
+    return fail(document, "A deferred review cannot be finalized. Resume the review after its follow-up date.")
+  }
+  if (isDeferred && existing.nextReviewDate && today() < existing.nextReviewDate) {
+    return fail(document, `This review is deferred until ${existing.nextReviewDate}.`)
+  }
+  if (existing?.decision && existing.finalApproval === "Pending" && !isDeferred) {
     return fail(document, "Record the final decision for the current review before starting another cycle.")
   }
   if (
     existing?.decision &&
+    !isDeferred &&
     existing.finalApproval !== "Changes Required" &&
     !(existing.decision === "Revision Required" && existing.finalApproval === "Not Required")
   ) {
@@ -870,6 +879,22 @@ export function reassignReviewer(
   if (!reviewer.trim()) return fail(document, "Select a reviewer.")
   const existing = latestCycle(review)
   if (existing?.decision) {
+    if (existing.decision === "Deferred") {
+      if (existing.finalApproval !== "Pending") {
+        return fail(document, "A deferred review cannot be finalized. Resume the review after its follow-up date.")
+      }
+      if (existing.nextReviewDate && today() < existing.nextReviewDate) {
+        return fail(document, `This review is deferred until ${existing.nextReviewDate}.`)
+      }
+    } else {
+      const progressionError = existing.finalApproval === "Pending"
+        ? "Record the final decision for the current review before reassigning the reviewer."
+        : existing.finalApproval !== "Changes Required" &&
+            !(existing.decision === "Revision Required" && existing.finalApproval === "Not Required")
+          ? "A reviewer can be reassigned to a new cycle only after changes are required."
+          : null
+      if (progressionError) return fail(document, progressionError)
+    }
     // A decided cycle is frozen — start the next cycle with the new reviewer.
     const cycle: ReviewCycle = {
       ...existing,
@@ -878,7 +903,7 @@ export function reassignReviewer(
       reviewerRole: role,
       reviewerReassigned: true,
       reviewDate: now().slice(0, 10),
-      dueDate: existing.dueDate,
+      dueDate: existing.nextReviewDate ?? existing.dueDate,
       status: "Awaiting Review",
       isDraft: true,
       decision: "",
@@ -950,6 +975,9 @@ export function recordFinalApproval(document: WorkflowDocument, input: FinalAppr
   if (!existing) return fail(document, "Record a review decision before the final approval.")
   if (!existing.decision) return fail(document, "Record a review decision before the final approval.")
   if (existing.status === "Finalized") return fail(document, "A final decision is already recorded for this review cycle.")
+  if (existing.decision === "Deferred") {
+    return fail(document, "A deferred review is still pending. Resume it on or after the next review date before recording a final decision.")
+  }
   const error = validateFinalApproval({
     finalApproval: input.finalApproval,
     decisionDate: input.decisionDate,

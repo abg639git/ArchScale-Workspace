@@ -95,6 +95,12 @@ const buttonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 const secondaryButtonClass =
   "inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+const closureButtonClass =
+  "inline-flex min-h-9 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+const closureSecondaryButtonClass =
+  "inline-flex min-h-9 items-center justify-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+const closureWarningButtonClass =
+  "inline-flex min-h-9 items-center justify-center rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 // ArchScale brand (#f45a1e) heading treatment: table headers and label tiles get
 // a light brand band with darker brand text instead of the plain slate bands.
 // Band is tinted (not solid) so small caps stay WCAG-readable; matches the
@@ -1454,7 +1460,7 @@ function ReturnPlanForm({
         <Field label="Verified by"><input disabled={readOnly} className={inputClass} value={verifiedBy} onChange={(e) => setVerifiedBy(e.target.value)} /></Field>
         <Field label="Inspection notes"><input disabled={readOnly} className={inputClass} value={inspectionNotes} onChange={(e) => setInspectionNotes(e.target.value)} /></Field>
       </div>}
-      {!readOnly && <div className="flex flex-wrap gap-2"><button className={secondaryButtonClass} onClick={savePlan}>Save return plan</button>{returnRequired && <button className={secondaryButtonClass} onClick={verify}>Verify physical return</button>}</div>}
+      {!readOnly && <div className="flex flex-wrap gap-2"><button className={closureSecondaryButtonClass} onClick={savePlan}>Save return plan</button>{returnRequired && <button className={closureButtonClass} onClick={verify}>Verify physical return</button>}</div>}
       {returnRequired && <p className="text-xs text-slate-500">Good verified units return to available stock. Damaged or unusable units are quarantined. Stocked: {sample.stockedQuantity} · Quarantined: {sample.quarantinedQuantity}</p>}
       <div className="border-t border-slate-100 pt-4">
         <h4 className="text-sm font-semibold">Final disposition · {remainingDisposition} unit(s) remaining</h4>
@@ -1464,7 +1470,7 @@ function ReturnPlanForm({
           {(dispositionType === "Retained" || dispositionType === "Lost") && <Field label="Authorised by"><input disabled={readOnly} className={inputClass} value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} /></Field>}
           <Field label="Disposition notes"><input disabled={readOnly} className={inputClass} value={dispositionNotes} onChange={(e) => setDispositionNotes(e.target.value)} /></Field>
         </div>
-        {!readOnly && <button className={`${secondaryButtonClass} mt-3`} onClick={add} disabled={remainingDisposition <= 0}>Add disposition</button>}
+        {!readOnly && <button className={`${closureSecondaryButtonClass} mt-3`} onClick={add} disabled={remainingDisposition <= 0}>Add disposition</button>}
         {sample.dispositions.length > 0 && <ul className="mt-3 space-y-2">{sample.dispositions.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm"><span>{entry.type === "Returned" ? "Returned to Stock" : entry.type === "Retained" ? "Retained by Client" : entry.type === "Converted" ? "Converted to Permanent Sample" : entry.type} · {entry.quantity} unit(s) {entry.approvedBy && `· Approved by ${entry.approvedBy}`} {entry.notes && `· ${entry.notes}`}</span></li>)}</ul>}
       </div>
       {message && <p role="status" className="text-xs text-slate-600">{message}</p>}
@@ -1537,14 +1543,14 @@ export function ReturnsClosurePage() {
             ["Issued", totals.issued], ["Received", totals.received], ["Accounted", totals.accounted], ["Outstanding", totals.outstanding], ["Quarantined", totals.quarantined],
           ] as Array<[string, number]>).map(([label, value]) => <div key={label} className={`rounded-lg p-3 ${brandHeadingBand}`}><p className={`text-xs font-semibold uppercase tracking-wider ${brandHeadingText}`}>{label}</p><p className={`mt-1 text-xl font-bold ${label === "Outstanding" && value > 0 ? "text-rose-700" : "text-slate-900"}`}>{value}</p></div>)}</div>}
           <div className="mt-4 flex flex-wrap items-center gap-2"><span className="text-sm font-medium">Closure status</span><StatusBadge>{readOnly ? "Closed" : blockers.length ? "Pending Closure" : "Ready to Close"}</StatusBadge></div>
-          {allocation[request.id]?.totals.pending && !request.pendingResolved && <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><p>{allocation[request.id].totals.pending} unissued unit(s) are still pending. Cancel that demand before closing, or leave the request open for later stock allocation.</p><button disabled={readOnly} className={`${secondaryButtonClass} mt-2`} onClick={cancelPending}>Cancel unissued pending demand</button></div>}
+          {allocation[request.id]?.totals.pending && !request.pendingResolved && <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><p>{allocation[request.id].totals.pending} unissued unit(s) are still pending. Cancel that demand before closing, or leave the request open for later stock allocation.</p><button disabled={readOnly} className={`${closureWarningButtonClass} mt-2`} onClick={cancelPending}>Cancel unissued pending demand</button></div>}
           {blockers.length > 0 && <div className="mt-4 rounded-lg bg-rose-50 p-3"><p className="text-sm font-semibold text-rose-800">Items to resolve before closure</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-rose-700">{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div>}
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <Field label="Closed by" required><input disabled={readOnly} className={inputClass} value={closedBy} onChange={(e) => setClosedBy(e.target.value)} /></Field>
             <Field label="Closure date" required><input disabled={readOnly} type="date" className={inputClass} value={closureDate} onChange={(e) => setClosureDate(e.target.value)} /></Field>
             <Field label="Closure notes"><input disabled={readOnly} className={inputClass} value={closureNotes} onChange={(e) => setClosureNotes(e.target.value)} /></Field>
           </div>
-          {!readOnly && <div className="mt-4 flex flex-wrap gap-2"><button className={secondaryButtonClass} onClick={saveDraft}>Save closure draft</button><button className={buttonClass} disabled={blockers.length > 0} onClick={() => { if (window.confirm("Close this request? This action makes its workflow records read-only.")) close() }}>Close request</button></div>}
+          {!readOnly && <div className="mt-4 flex flex-wrap gap-2"><button className={closureSecondaryButtonClass} onClick={saveDraft}>Save closure draft</button><button className={closureButtonClass} disabled={blockers.length > 0} onClick={() => { if (window.confirm("Close this request? This action makes its workflow records read-only.")) close() }}>Close request</button></div>}
           {readOnly && <p className="mt-4 text-sm font-semibold text-emerald-700">Closed {request.closedAt ? new Date(request.closedAt).toLocaleString() : ""} · records are read-only.</p>}
           {record?.history.length ? <div className="mt-5 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold">Closure history</h3><ol className="mt-2 space-y-2">{record.history.slice().reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="text-xs text-slate-600"><span className="font-medium">{entry.action}</span><span className="ml-2 text-slate-400">{new Date(entry.at).toLocaleString()}</span></li>)}</ol></div> : null}
         </section>

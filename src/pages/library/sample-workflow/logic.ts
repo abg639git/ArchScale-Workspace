@@ -520,6 +520,9 @@ export function validateReviewCycle(draft: CycleDraft): string | null {
   if (draft.decision === "Deferred" && !draft.nextReviewDate) {
     return "A deferred review requires the next review date."
   }
+  if (draft.decision === "Deferred" && draft.nextReviewDate && draft.nextReviewDate <= draft.reviewDate) {
+    return "The next review date must be after the current review date."
+  }
   if (draft.decision === "Rejected" && !draft.comments.trim()) {
     return "Add reviewer comments explaining the rejection."
   }
@@ -544,6 +547,9 @@ export type FinalDraft = {
 /** Final approval is recorded separately from the review decision (spec §04). */
 export function validateFinalApproval(draft: FinalDraft): string | null {
   if (!draft.decision) return "Record a review decision before the final approval."
+  if (draft.decision === "Deferred") {
+    return "A deferred review is still pending. Resume it on or after the next review date before recording a final decision."
+  }
   if (!draft.finalApproval) return "Select a final approval status."
   if (draft.finalApproval !== "Not Required" && !draft.decisionDate) {
     return "Enter the date for the final decision."
