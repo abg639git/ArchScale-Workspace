@@ -78,6 +78,10 @@ function formatRequestDate(value?: string): string {
     : new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(date)
 }
 
+function currentTimestamp(): string {
+  return new Date().toISOString()
+}
+
 function validateRequest(request: MaterialRequest): string | null {
   const missing = [
     ["Project", request.project],
@@ -496,7 +500,7 @@ function RequestDetails({
 
 export function SelectIssuePage() {
   const [requests] = usePersistentState<MaterialRequest[]>(requestsStorageKey, [])
-  const [items] = usePersistentState<InventoryItem[]>(inventoryStorageKey, initialItems)
+  const [items, setItems] = usePersistentState<InventoryItem[]>(inventoryStorageKey, initialItems)
   const [workflows, setWorkflows] = usePersistentState<Stage2Workflow[]>(stage2WorkflowsStorageKey, [])
   const [dispatches, setDispatches] = usePersistentState<Stage2Dispatch[]>(stage2DispatchesStorageKey, [])
   const [activeRequestId, setActiveRequestId] = React.useState("")
@@ -515,11 +519,13 @@ export function SelectIssuePage() {
   )
 
   const reservedQuantityFor = (itemId: string) => workflows.reduce((sum, workflow) =>
-    sum + workflow.samples.reduce((lineSum, line) =>
-      line.itemId === itemId && line.reservedAt ? lineSum + line.reservedQuantity : lineSum, 0), 0)
+    workflow.status === "reserved" || workflow.status === "prepared"
+      ? sum + workflow.samples.reduce((lineSum, line) =>
+        line.itemId === itemId && line.reservedAt ? lineSum + line.reservedQuantity : lineSum, 0)
+      : sum, 0)
 
-  const availableQuantityFor = (item: InventoryItem) =>
-    Math.max(0, item.stock - reservedQuantityFor(item.id))
+  const availableQuantityFor = (item: InventoryItem, stockItems = items) =>
+    Math.max(0, (stockItems.find((entry) => entry.id === item.id)?.stock ?? 0) - reservedQuantityFor(item.id))
 
   const persistWorkflows = (next: Stage2Workflow[], message: string) => {
     try {
@@ -556,7 +562,7 @@ export function SelectIssuePage() {
       request: activeRequest,
       samples: [],
       status: "selection" as const,
-      createdAt: new Date().toISOString(),
+      createdAt: currentTimestamp(),
     }
     const existing = workflow.samples.find((line) => line.itemId === item.id)
     if (existing) {
@@ -590,27 +596,37 @@ export function SelectIssuePage() {
 
   const reserveSamples = () => {
     if (!activeWorkflow || activeWorkflow.status !== "selection" || activeWorkflow.samples.length === 0) return
+    let currentItems = items
+    try {
+      const savedItems = window.localStorage.getItem(inventoryStorageKey)
+      if (savedItems !== null) currentItems = JSON.parse(savedItems) as InventoryItem[]
+    } catch {
+      setError("Current inventory could not be read; stock was not reserved.")
+      return
+    }
     const totalSelected = activeWorkflow.samples.reduce((sum, line) => sum + line.selectedQuantity, 0)
     if (totalSelected > activeWorkflow.request.quantity) {
       setError(`Selected quantity cannot exceed the request quantity of ${activeWorkflow.request.quantity}.`)
       return
     }
     const insufficient = activeWorkflow.samples.find((line) => {
-      const item = items.find((entry) => entry.id === line.itemId)
-      return !item || line.selectedQuantity < 1 || line.selectedQuantity > availableQuantityFor(item)
+      const item = currentItems.find((entry) => entry.id === line.itemId)
+      return !item || line.selectedQuantity < 1 || line.selectedQuantity > availableQuantityFor(item, currentItems)
     })
     if (insufficient) {
       setError(`${insufficient.name} does not have enough available stock. Update the Sample Bag quantities and try again.`)
       return
     }
+    setItems(currentItems)
+    const reservedAt = currentTimestamp()
     const nextWorkflow: Stage2Workflow = {
       ...activeWorkflow,
       status: "reserved",
-      reservedAt: new Date().toISOString(),
+      reservedAt,
       samples: activeWorkflow.samples.map((line) => ({
         ...line,
         reservedQuantity: line.selectedQuantity,
-        reservedAt: new Date().toISOString(),
+        reservedAt,
         issuedQuantity: 0,
       })),
     }
@@ -620,7 +636,7 @@ export function SelectIssuePage() {
 
   const markPrepared = () => {
     if (!activeWorkflow || activeWorkflow.status !== "reserved") return
-    const nextWorkflow = { ...activeWorkflow, status: "prepared" as const, preparedAt: new Date().toISOString() }
+    const nextWorkflow = { ...activeWorkflow, status: "prepared" as const, preparedAt: currentTimestamp() }
     const next = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
     persistWorkflows(next, "Reserved samples marked as prepared.")
   }
@@ -658,7 +674,7 @@ export function SelectIssuePage() {
       return
     }
 
-    const createdAt = new Date().toISOString()
+    const createdAt = currentTimestamp()
     const dispatch: Stage2Dispatch = {
       id: `DSP-${activeWorkflow.request.id}`,
       request: activeWorkflow.request,
@@ -677,6 +693,11 @@ export function SelectIssuePage() {
     }
     const nextWorkflows = workflows.map((workflow) => workflow.request.id === activeRequestId ? nextWorkflow : workflow)
     const nextDispatches = [dispatch, ...dispatches]
+    const issuedByItem = new Map(samples.map((line) => [line.itemId, line.issuedQuantity]))
+    const currentItems = items.map((item) => ({
+      ...item,
+      stock: Math.max(0, item.stock - (issuedByItem.get(item.id) ?? 0)),
+    }))
     const issuedReportEntry = {
       id: activeWorkflow.request.id,
       organization: "",
@@ -697,7 +718,7 @@ export function SelectIssuePage() {
     }
     let previousValues: Array<[string, string | null]> = []
     try {
-      previousValues = [stage2WorkflowsStorageKey, stage2DispatchesStorageKey, issuedRequestsStorageKey]
+      previousValues = [stage2WorkflowsStorageKey, stage2DispatchesStorageKey, issuedRequestsStorageKey, inventoryStorageKey]
         .map((key) => [key, window.localStorage.getItem(key)])
       const existingReports = JSON.parse(window.localStorage.getItem(issuedRequestsStorageKey) ?? "[]") as Array<{ id?: string }>
       const nextReports = [
@@ -707,6 +728,7 @@ export function SelectIssuePage() {
       window.localStorage.setItem(stage2WorkflowsStorageKey, JSON.stringify(nextWorkflows))
       window.localStorage.setItem(stage2DispatchesStorageKey, JSON.stringify(nextDispatches))
       window.localStorage.setItem(issuedRequestsStorageKey, JSON.stringify(nextReports))
+      window.localStorage.setItem(inventoryStorageKey, JSON.stringify(currentItems))
     } catch {
       try {
         previousValues.forEach(([key, value]) => {
@@ -722,6 +744,7 @@ export function SelectIssuePage() {
     }
     setWorkflows(nextWorkflows)
     setDispatches(nextDispatches)
+    setItems(currentItems)
     setError("")
     setFeedback(`${dispatch.id} is ready for the dispatch team or pickup arrangement.`)
     window.dispatchEvent(new CustomEvent("archscale:navigate", {
@@ -749,7 +772,11 @@ export function SelectIssuePage() {
         </div>
         <label className="min-w-[220px] text-xs font-medium">
           Reviewed request
-          <select aria-label="Reviewed request" value={activeRequestId} onChange={(event) => openRequest(eligibleRequests.find((request) => request.id === event.target.value)!)} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm" disabled={eligibleRequests.length === 0}>
+          <select aria-label="Reviewed request" value={activeRequestId} onChange={(event) => {
+            const request = eligibleRequests.find((entry) => entry.id === event.target.value)
+            if (request) openRequest(request)
+            else setActiveRequestId("")
+          }} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm" disabled={eligibleRequests.length === 0}>
             <option value="">Select a Stage 1 reviewed request</option>
             {eligibleRequests.map((request) => (
               <option key={request.id} value={request.id}>{request.id} · {request.project}</option>
@@ -842,7 +869,7 @@ export function SelectIssuePage() {
                           <tr key={line.itemId}>
                             <td className="px-3 py-3"><span className="block font-medium">{line.name}</span><span className="text-xs text-muted-foreground">{line.code} · {line.category}</span></td>
                             <td className="px-3 py-3"><span className={cn("rounded-full px-2 py-1 text-xs font-medium", available >= line.selectedQuantity ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>{available >= line.selectedQuantity ? `${available} available` : `Only ${available} available`}</span></td>
-                            <td className="px-3 py-3"><input aria-label={`Quantity for ${line.name}`} type="number" min={1} max={Math.min(available + line.selectedQuantity, activeRequest.quantity - totalBagQuantity + line.selectedQuantity)} value={line.selectedQuantity} disabled={activeWorkflow?.status !== "selection"} onChange={(event) => {
+                            <td className="px-3 py-3"><input aria-label={`Quantity for ${line.name}`} type="number" min={1} max={Math.min(available, activeRequest.quantity - totalBagQuantity + line.selectedQuantity)} value={line.selectedQuantity} disabled={activeWorkflow?.status !== "selection"} onChange={(event) => {
                               const quantity = Number(event.target.value)
                               if (!Number.isInteger(quantity) || quantity < 1) return
                               const otherQuantity = totalBagQuantity - line.selectedQuantity
@@ -850,7 +877,7 @@ export function SelectIssuePage() {
                                 setError(`Total Sample Bag quantity cannot exceed ${activeRequest.quantity}.`)
                                 return
                               }
-                              if (quantity > available + line.selectedQuantity) {
+                              if (quantity > available) {
                                 setError(`Only ${available} units of ${line.name} are available.`)
                                 return
                               }
@@ -910,7 +937,7 @@ export function SelectIssuePage() {
                             <tr key={line.itemId}>
                               <td className="px-3 py-3 font-medium">{line.name}<span className="block text-xs text-muted-foreground">{line.code}</span></td>
                               <td className="px-3 py-3">{line.reservedQuantity}</td>
-                              <td className="px-3 py-3"><input aria-label={`Issued quantity for ${line.name}`} name={`issued-${line.itemId}`} type="number" min={0} max={line.reservedQuantity} defaultValue={line.reservedQuantity} className="h-8 w-20 rounded-md border border-input px-2" /></td>
+                              <td className="px-3 py-3"><input aria-label={`Issued quantity for ${line.name}`} name={`issued-${line.itemId}`} type="number" min={0} defaultValue={line.reservedQuantity} className="h-8 w-20 rounded-md border border-input px-2" /></td>
                               <td className="px-3 py-3"><select aria-label={`Condition for ${line.name}`} name={`condition-${line.itemId}`} defaultValue="" className="h-8 rounded-md border border-input bg-background px-2 text-xs"><option value="">Select condition</option>{sampleConditions.map((value) => <option key={value}>{value}</option>)}</select></td>
                               <td className="px-3 py-3"><select aria-label={`Issue status for ${line.name}`} name={`issueStatus-${line.itemId}`} defaultValue="" className="h-8 rounded-md border border-input bg-background px-2 text-xs"><option value="">Select status</option>{sampleIssueStatuses.map((value) => <option key={value}>{value}</option>)}</select></td>
                             </tr>
