@@ -113,11 +113,11 @@ const reviewPrimaryButtonClass =
 const brandHeadingBand = "border-[#f8d3c1] bg-[#fdece4]"
 const brandHeadingText = "text-[#b1440f]"
 const stageThemes = [
-  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
-  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
-  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
-  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
-  { active: "border-[#f45a1e] bg-[#f45a1e]", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-[#f45a1e]", guideLabel: "text-[#b1440f]" },
+  { active: "border-indigo-600 bg-indigo-600", icon: "text-indigo-600", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-indigo-500", guideLabel: "text-[#b1440f]" },
+  { active: "border-violet-600 bg-violet-600", icon: "text-violet-600", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-violet-500", guideLabel: "text-[#b1440f]" },
+  { active: "border-sky-600 bg-sky-600", icon: "text-sky-600", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-sky-500", guideLabel: "text-[#b1440f]" },
+  { active: "border-amber-500 bg-amber-500", icon: "text-amber-600", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-amber-500", guideLabel: "text-[#b1440f]" },
+  { active: "border-emerald-600 bg-emerald-600", icon: "text-emerald-600", eyebrow: "text-[#b1440f]", navIdle: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50", navRing: "focus-visible:ring-emerald-500", guideLabel: "text-[#b1440f]" },
 ]
 
 function Field({
@@ -225,7 +225,7 @@ function StageLayout({
               onClick={() => navigateToStage(index + 1)}
               className={`flex min-h-10 items-center justify-center gap-1 rounded-md border px-1 py-2 text-center text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 ${theme.navRing} focus-visible:ring-offset-1 sm:gap-1.5 sm:px-2 sm:text-xs ${index + 1 === stage ? `${theme.active} text-white` : `${theme.navIdle} text-slate-700`}`}
             >
-              <Icon aria-hidden="true" className={`size-3.5 shrink-0 sm:size-4 ${index + 1 === stage ? "text-white" : "text-[#b1440f]"}`} />
+              <Icon aria-hidden="true" className={`size-3.5 shrink-0 sm:size-4 ${index + 1 === stage ? "text-white" : stageThemes[index].icon}`} />
               <span className="truncate">{label}</span>
             </button>
           ))}
