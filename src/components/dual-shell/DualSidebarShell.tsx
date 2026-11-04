@@ -28,6 +28,7 @@ import {
 import { AppRail } from "./AppRail"
 import { RAIL_PREVIEW_CONTENT, SAMPLE_MANAGEMENT_STAGES, type RailAppId } from "./rail-content"
 import { ApplicationSidebar, defaultSidebarData } from "./ApplicationSidebar"
+import { SampleStageNavigationContext } from "./SampleStageNavigation"
 import { cn } from "@/lib/utils"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 
@@ -180,15 +181,9 @@ function ShellContent({
     if (!open) toggleSidebar()
   }, [open, setActiveItem, setActiveRailId, toggleSidebar])
 
-  React.useEffect(() => {
-    const handleSampleStageNavigation = (event: Event) => {
-      const stage = (event as CustomEvent<{ stage?: unknown }>).detail?.stage
-      if (typeof stage !== "number" || !Number.isInteger(stage)) return
-      const item = SAMPLE_MANAGEMENT_STAGES[stage - 1]
-      if (item) navigateTo("library", item)
-    }
-    window.addEventListener("archscale:navigate-sample-stage", handleSampleStageNavigation)
-    return () => window.removeEventListener("archscale:navigate-sample-stage", handleSampleStageNavigation)
+  const navigateToSampleStage = React.useCallback((stage: number) => {
+    if (!Number.isInteger(stage) || stage < 1 || stage > SAMPLE_MANAGEMENT_STAGES.length) return
+    navigateTo("library", SAMPLE_MANAGEMENT_STAGES[stage - 1])
   }, [navigateTo])
 
   // Stable handlers: without these, fresh closures are created on every render
@@ -394,11 +389,13 @@ function ShellContent({
             open && "-ml-2"
           )}
         >
-        {ActivePage && (
-          <React.Suspense fallback={<PageFallback />}>
-            <ActivePage />
-          </React.Suspense>
-        )}
+        <SampleStageNavigationContext.Provider value={navigateToSampleStage}>
+          {ActivePage && (
+            <React.Suspense fallback={<PageFallback />}>
+              <ActivePage />
+            </React.Suspense>
+          )}
+        </SampleStageNavigationContext.Provider>
       </SidebarInset>
       </div>
       {shellFeedback && <div role="status" className="absolute bottom-4 right-4 z-[60] rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">{shellFeedback}</div>}

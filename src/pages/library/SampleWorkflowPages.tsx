@@ -76,6 +76,7 @@ import {
   Truck,
   X,
 } from "@/components/ui/icons"
+import { SampleStageNavigationContext } from "@/components/dual-shell/SampleStageNavigation"
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -186,6 +187,7 @@ function StageLayout({
   subtitle: string
   children: React.ReactNode
 }) {
+  const navigateToStage = React.useContext(SampleStageNavigationContext)
   const steps = [
     { label: "Request", Icon: ClipboardList },
     { label: "Reserve & Issue", Icon: Package },
@@ -210,7 +212,7 @@ function StageLayout({
               key={label}
               type="button"
               aria-current={index + 1 === stage ? "step" : undefined}
-              onClick={() => window.dispatchEvent(new CustomEvent("archscale:navigate-sample-stage", { detail: { stage: index + 1 } }))}
+              onClick={() => navigateToStage(index + 1)}
               className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-2.5 py-2 text-center text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${index + 1 === stage ? `${theme.active} text-white shadow-md` : "border-slate-200 bg-white/90 text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white"}`}
             >
               <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${index + 1 === stage ? theme.activeIcon : stageThemes[index].icon}`} />
