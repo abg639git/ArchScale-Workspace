@@ -2,6 +2,7 @@ import * as React from "react"
 import { usePersistentState } from "@/hooks/use-persistent-state"
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
   Clock3,
   Edit2,
@@ -19,12 +20,19 @@ import { directoryData, type DirectoryEntry } from "@/components/split-view/data
 
 type RequestStatus = "Draft" | "Submitted" | "Ready for Select & Issue"
 
+type SampleRequestSelection = {
+  itemId: string
+  name: string
+  quantity: number
+}
+
 type MaterialRequest = {
   id: string
   project: string
   requester: string
   requestType: string
   sampleDetails: string
+  sampleSelections?: SampleRequestSelection[]
   quantity: number
   purpose: string
   priority: "Urgent" | "High" | "Normal" | "Low"
@@ -86,11 +94,11 @@ function currentTimestamp(): string {
 }
 
 function validateRequest(request: MaterialRequest): string | null {
+  if (!request.sampleSelections?.length) return "Select at least one sample."
   const missing = [
     ["Project", request.project],
     ["Requester", request.requester],
     ["Request type", request.requestType],
-    ["Sample details", request.sampleDetails],
     ["Required date", request.requiredDate],
     ["Delivery address", request.deliveryAddress],
     ["Assigned coordinator", request.assignedCoordinator],
@@ -110,7 +118,8 @@ function emptyRequest(id: string): MaterialRequest {
     requester: "",
     requestType: requestTypes[0],
     sampleDetails: "",
-    quantity: 1,
+    sampleSelections: [],
+    quantity: 0,
     purpose: "",
     priority: "Normal",
     requiredDate: "",
@@ -171,8 +180,32 @@ function RequestForm({
   onCancel: () => void
   error: string
 }) {
+  const [inventoryItems] = usePersistentState<InventoryItem[]>(inventoryStorageKey, initialItems)
+  const [sampleSearch, setSampleSearch] = React.useState("")
+  const [isSampleMenuOpen, setIsSampleMenuOpen] = React.useState(false)
   const set = <K extends keyof MaterialRequest,>(key: K, value: MaterialRequest[K]) => {
     onChange({ ...request, [key]: value })
+  }
+  const selectedSamples = request.sampleSelections ?? []
+  const availableSamples = inventoryItems.filter((item) => item.isSample)
+  const matchingSamples = availableSamples.filter((item) =>
+    `${item.name} ${item.code} ${item.category} ${item.finish} ${item.size}`
+      .toLowerCase()
+      .includes(sampleSearch.trim().toLowerCase())
+  )
+  const updateSampleSelections = (samples: SampleRequestSelection[]) => {
+    onChange({
+      ...request,
+      sampleSelections: samples,
+      sampleDetails: samples.map((sample) => sample.name).join(", "),
+      quantity: samples.reduce((sum, sample) => sum + sample.quantity, 0),
+    })
+  }
+  const toggleSample = (item: InventoryItem) => {
+    const selected = selectedSamples.some((sample) => sample.itemId === item.id)
+    updateSampleSelections(selected
+      ? selectedSamples.filter((sample) => sample.itemId !== item.id)
+      : [...selectedSamples, { itemId: item.id, name: item.name, quantity: 1 }])
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel() }}>
@@ -199,8 +232,93 @@ function RequestForm({
             <section>
               <h3 className="mb-3 text-sm font-semibold">Sample information</h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2"><RequestField label="Sample details" value={request.sampleDetails} onChange={(value) => set("sampleDetails", value)} required multiline /></div>
-                <RequestField label="Quantity" type="number" min={1} value={request.quantity} onChange={(value) => set("quantity", Number(value))} required />
+                <div className="sm:col-span-2">
+                  <span className={labelClass}>Sample details<span className="ml-1 text-destructive">*</span></span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      aria-expanded={isSampleMenuOpen}
+                      onClick={() => setIsSampleMenuOpen((open) => !open)}
+                      className={cn(inputClass, "flex items-center justify-between text-left")}
+                    >
+                      <span className="truncate">{selectedSamples.length ? `${selectedSamples.length} sample${selectedSamples.length === 1 ? "" : "s"} selected` : "Search and select samples"}</span>
+                      <Search className="ml-2 size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                    {isSampleMenuOpen && (
+                      <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-background p-2 shadow-lg">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            autoFocus
+                            type="search"
+                            aria-label="Search catalogue samples"
+                            value={sampleSearch}
+                            onChange={(event) => setSampleSearch(event.target.value)}
+                            placeholder="Search name, code, category..."
+                            className={cn(inputClass, "pl-8")}
+                          />
+                        </div>
+                        <div role="group" aria-label="Available catalogue samples" className="mt-2 max-h-52 overflow-y-auto">
+                          {matchingSamples.map((item) => {
+                            const checked = selectedSamples.some((sample) => sample.itemId === item.id)
+                            return (
+                              <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-muted">
+                                <input type="checkbox" checked={checked} onChange={() => toggleSample(item)} className="size-4 accent-primary" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate font-medium">{item.name}</span>
+                                  <span className="block truncate text-xs text-muted-foreground">{item.code} · {item.category}</span>
+                                </span>
+                                {checked && <Check className="size-4 text-primary" />}
+                              </label>
+                            )
+                          })}
+                          {matchingSamples.length === 0 && <p className="p-3 text-center text-sm text-muted-foreground">No catalogue samples match this search.</p>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {selectedSamples.length > 0 && (
+                    <div className="mt-2 space-y-2" aria-label="Selected samples">
+                      {selectedSamples.map((sample) => (
+                        <div key={sample.itemId} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">{sample.name}</span>
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            Quantity
+                            <input
+                              aria-label={`Requested quantity for ${sample.name}`}
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={sample.quantity}
+                              onChange={(event) => {
+                                const quantity = Number(event.target.value)
+                                if (!Number.isInteger(quantity) || quantity < 1) return
+                                updateSampleSelections(selectedSamples.map((entry) =>
+                                  entry.itemId === sample.itemId ? { ...entry, quantity } : entry
+                                ))
+                              }}
+                              className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${sample.name}`}
+                            onClick={() => updateSampleSelections(selectedSamples.filter((entry) => entry.itemId !== sample.itemId))}
+                            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <X className="size-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {error === "Select at least one sample." && <p role="alert" className="mt-1 text-xs text-destructive">Select at least one sample.</p>}
+                </div>
+                <label className="block min-w-0">
+                  <span className={labelClass}>Quantity</span>
+                  <input aria-label="Total requested quantity" type="number" value={request.quantity} readOnly className={cn(inputClass, "bg-muted")} />
+                  <span className="mt-1 block text-xs text-muted-foreground">Total across selected samples.</span>
+                </label>
                 <RequestField label="Purpose" value={request.purpose} onChange={(value) => set("purpose", value)} multiline />
               </div>
             </section>
@@ -213,7 +331,7 @@ function RequestForm({
               </div>
             </section>
           </div>
-          {error && <p role="alert" className="mt-5 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+          {error && error !== "Select at least one sample." && <p role="alert" className="mt-5 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
         </form>
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
           <button type="button" onClick={onCancel} className="h-9 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">Cancel</button>
@@ -518,7 +636,9 @@ export function SelectIssuePage() {
     ?? activeWorkflow?.request
   const query = search.trim().toLowerCase()
   const catalogue = items.filter((item) =>
-    item.isSample && (!query || `${item.name} ${item.code} ${item.category} ${item.finish} ${item.size}`.toLowerCase().includes(query))
+    item.isSample &&
+    (!activeRequest?.sampleSelections?.length || activeRequest.sampleSelections.some((sample) => sample.itemId === item.id)) &&
+    (!query || `${item.name} ${item.code} ${item.category} ${item.finish} ${item.size}`.toLowerCase().includes(query))
   )
 
   const reservedQuantityFor = (itemId: string) => workflows.reduce((sum, workflow) =>
@@ -553,6 +673,14 @@ export function SelectIssuePage() {
 
   const updateLine = (itemId: string, update: Partial<Stage2SampleLine>) => {
     if (!activeWorkflow || activeWorkflow.status !== "selection") return
+    if (update.selectedQuantity !== undefined) {
+      const requestedSample = activeWorkflow.request.sampleSelections?.find((sample) => sample.itemId === itemId)
+      const requestedQuantity = requestedSample?.quantity ?? activeWorkflow.request.quantity
+      if (update.selectedQuantity > requestedQuantity) {
+        setError(`Selected quantity for ${requestedSample?.name ?? itemId} cannot exceed the ${requestedQuantity} requested.`)
+        return
+      }
+    }
     const next = workflows.map((workflow) => workflow.request.id === activeWorkflow.request.id
       ? { ...workflow, samples: workflow.samples.map((line) => line.itemId === itemId ? { ...line, ...update } : line) }
       : workflow)
@@ -570,6 +698,10 @@ export function SelectIssuePage() {
     const existing = workflow.samples.find((line) => line.itemId === item.id)
     if (existing) {
       setError("This sample is already in the Sample Bag. Update its quantity there.")
+      return
+    }
+    if (activeRequest.sampleSelections?.length && !activeRequest.sampleSelections.some((sample) => sample.itemId === item.id)) {
+      setError("This sample was not included in the Stage 1 request.")
       return
     }
     if (workflow.samples.reduce((sum, line) => sum + line.selectedQuantity, 0) + 1 > activeRequest.quantity) {
@@ -614,7 +746,11 @@ export function SelectIssuePage() {
     }
     const insufficient = activeWorkflow.samples.find((line) => {
       const item = currentItems.find((entry) => entry.id === line.itemId)
-      return !item || line.selectedQuantity < 1 || line.selectedQuantity > availableQuantityFor(item, currentItems)
+      const requestedSample = activeWorkflow.request.sampleSelections?.find((sample) => sample.itemId === line.itemId)
+      return !item ||
+        line.selectedQuantity < 1 ||
+        line.selectedQuantity > (requestedSample?.quantity ?? activeWorkflow.request.quantity) ||
+        line.selectedQuantity > availableQuantityFor(item, currentItems)
     })
     if (insufficient) {
       setError(`${insufficient.name} does not have enough available stock. Update the Sample Bag quantities and try again.`)
@@ -819,7 +955,7 @@ export function SelectIssuePage() {
             {section === "Catalogue" && (
               <section className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div><h2 className="font-semibold">Sample Catalogue</h2><p className="text-sm text-muted-foreground">Select up to {activeRequest.quantity} total sample units for this request.</p></div>
+                  <div><h2 className="font-semibold">Sample Catalogue</h2><p className="text-sm text-muted-foreground">{activeRequest.sampleSelections?.length ? "Choose only the samples requested in Stage 1 and select their requested quantities." : `Select up to ${activeRequest.quantity} total sample units for this request.`}</p></div>
                   <label className="relative block w-full max-w-sm">
                     <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <input aria-label="Search sample catalogue" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, code, category..." className={cn(inputClass, "pl-9")} />
@@ -868,16 +1004,21 @@ export function SelectIssuePage() {
                       {(activeWorkflow?.samples ?? []).map((line) => {
                         const item = items.find((entry) => entry.id === line.itemId)
                         const available = item ? availableQuantityFor(item) : 0
+                        const requestedQuantity = activeRequest.sampleSelections?.find((sample) => sample.itemId === line.itemId)?.quantity ?? activeRequest.quantity
                         return (
                           <tr key={line.itemId}>
                             <td className="px-3 py-3"><span className="block font-medium">{line.name}</span><span className="text-xs text-muted-foreground">{line.code} · {line.category}</span></td>
                             <td className="px-3 py-3"><span className={cn("rounded-full px-2 py-1 text-xs font-medium", available >= line.selectedQuantity ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800")}>{available >= line.selectedQuantity ? `${available} available` : `Only ${available} available`}</span></td>
-                            <td className="px-3 py-3"><input aria-label={`Quantity for ${line.name}`} type="number" min={1} max={Math.min(available, activeRequest.quantity - totalBagQuantity + line.selectedQuantity)} value={line.selectedQuantity} disabled={activeWorkflow?.status !== "selection"} onChange={(event) => {
+                            <td className="px-3 py-3"><input aria-label={`Quantity for ${line.name}`} type="number" min={1} max={Math.min(available, requestedQuantity, activeRequest.quantity - totalBagQuantity + line.selectedQuantity)} value={line.selectedQuantity} disabled={activeWorkflow?.status !== "selection"} onChange={(event) => {
                               const quantity = Number(event.target.value)
                               if (!Number.isInteger(quantity) || quantity < 1) return
                               const otherQuantity = totalBagQuantity - line.selectedQuantity
                               if (otherQuantity + quantity > activeRequest.quantity) {
                                 setError(`Total Sample Bag quantity cannot exceed ${activeRequest.quantity}.`)
+                                return
+                              }
+                              if (quantity > requestedQuantity) {
+                                setError(`Selected quantity for ${line.name} cannot exceed the ${requestedQuantity} requested.`)
                                 return
                               }
                               if (quantity > available) {
